@@ -1,0 +1,70 @@
+{
+    "rules": [
+        {
+            "rulePriority": 1,
+            "description": "Keep last 10 production images",
+            "selection": {
+                "tagStatus": "tagged",
+                "tagPrefixList": ["v", "latest"],
+                "countType": "imageCountMoreThan",
+                "countNumber": 10
+            },
+            "action": {
+                "type": "expire"
+            }
+        },
+        {
+            "rulePriority": 2,
+            "description": "Keep last 5 branch images",
+            "selection": {
+                "tagStatus": "tagged",
+                "tagPrefixList": ["main-", "develop-", "feature-"],
+                "countType": "imageCountMoreThan",
+                "countNumber": 5
+            },
+            "action": {
+                "type": "expire"
+            }
+        },
+        {
+            "rulePriority": 3,
+            "description": "Keep last 3 PR images",
+            "selection": {
+                "tagStatus": "tagged",
+                "tagPrefixList": ["pr-"],
+                "countType": "imageCountMoreThan",
+                "countNumber": 3
+            },
+            "action": {
+                "type": "expire"
+            }
+        },
+        {
+            "rulePriority": 4,
+            "description": "Delete untagged images older than 1 day",
+            "selection": {
+                "tagStatus": "untagged",
+                "countType": "sinceImagePushed",
+                "countUnit": "days",
+                "countNumber": 1
+            },
+            "action": {
+                "type": "expire"
+            }
+        },
+        {
+            "rulePriority": 5,
+            "description": "Delete backup images older than 7 days",
+            "selection": {
+                "tagStatus": "tagged",
+                "tagPrefixList": ["backup-"],
+                "countType": "sinceImagePushed",
+                "countUnit": "days",
+                "countNumber": 7
+            },
+            "action": {
+                "type": "expire"
+            }
+        }
+    ]
+}

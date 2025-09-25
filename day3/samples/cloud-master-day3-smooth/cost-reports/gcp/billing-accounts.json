@@ -1,0 +1,18 @@
+[
+  {
+    "currencyCode": "KRW",
+    "displayName": "내 결제 계정",
+    "masterBillingAccount": "",
+    "name": "billingAccounts/018F2F-33A440-06B5AD",
+    "open": true,
+    "parent": ""
+  },
+  {
+    "currencyCode": "USD",
+    "displayName": "내 결제 계정",
+    "masterBillingAccount": "",
+    "name": "billingAccounts/01B7DE-9D297D-E4B219",
+    "open": false,
+    "parent": ""
+  }
+]

@@ -1,0 +1,146 @@
+{
+  "resource_types": {
+    "aws_resources": {
+      "vpc": {
+        "description": "Virtual Private Cloud",
+        "required_for": ["cloud_basic", "cloud_master"],
+        "shared_across_courses": true
+      },
+      "subnet": {
+        "description": "Subnet for network isolation",
+        "required_for": ["cloud_basic", "cloud_master"],
+        "shared_across_courses": true
+      },
+      "security_group": {
+        "description": "Security group for access control",
+        "required_for": ["cloud_basic", "cloud_master"],
+        "shared_across_courses": true
+      },
+      "s3_bucket": {
+        "description": "S3 bucket for object storage",
+        "required_for": ["cloud_basic", "cloud_master"],
+        "shared_across_courses": true
+      }
+    },
+    "gcp_resources": {
+      "project": {
+        "description": "GCP Project",
+        "required_for": ["cloud_basic", "cloud_master"],
+        "shared_across_courses": true
+      },
+      "network": {
+        "description": "VPC Network",
+        "required_for": ["cloud_basic", "cloud_master"],
+        "shared_across_courses": true
+      },
+      "subnet": {
+        "description": "Subnet for network isolation",
+        "required_for": ["cloud_basic", "cloud_master"],
+        "shared_across_courses": true
+      }
+    },
+    "docker_resources": {
+      "images": {
+        "description": "Docker images",
+        "required_for": ["cloud_master", "cloud_container"],
+        "shared_across_courses": true
+      },
+      "containers": {
+        "description": "Docker containers",
+        "required_for": ["cloud_master", "cloud_container"],
+        "shared_across_courses": true
+      },
+      "registry": {
+        "description": "Docker registry",
+        "required_for": ["cloud_master", "cloud_container"],
+        "shared_across_courses": true
+      }
+    },
+    "kubernetes_resources": {
+      "cluster": {
+        "description": "Kubernetes cluster",
+        "required_for": ["cloud_container"],
+        "shared_across_courses": false
+      },
+      "namespace": {
+        "description": "Kubernetes namespace",
+        "required_for": ["cloud_container"],
+        "shared_across_courses": true
+      },
+      "deployments": {
+        "description": "Kubernetes deployments",
+        "required_for": ["cloud_container"],
+        "shared_across_courses": false
+      },
+      "services": {
+        "description": "Kubernetes services",
+        "required_for": ["cloud_container"],
+        "shared_across_courses": false
+      }
+    },
+    "github_resources": {
+      "repositories": {
+        "description": "GitHub repositories",
+        "required_for": ["cloud_master", "cloud_container"],
+        "shared_across_courses": true
+      },
+      "workflows": {
+        "description": "GitHub Actions workflows",
+        "required_for": ["cloud_master", "cloud_container"],
+        "shared_across_courses": true
+      },
+      "secrets": {
+        "description": "GitHub secrets",
+        "required_for": ["cloud_master", "cloud_container"],
+        "shared_across_courses": true
+      }
+    }
+  },
+  "course_dependencies": {
+    "cloud_basic": {
+      "creates": ["aws_resources", "gcp_resources"],
+      "requires": [],
+      "shares_with": ["cloud_master"]
+    },
+    "cloud_master": {
+      "creates": ["docker_resources", "github_resources"],
+      "requires": ["aws_resources", "gcp_resources"],
+      "shares_with": ["cloud_container"]
+    },
+    "cloud_container": {
+      "creates": ["kubernetes_resources"],
+      "requires": ["docker_resources", "github_resources"],
+      "shares_with": []
+    }
+  },
+  "resource_lifecycle": {
+    "creation_order": [
+      "aws_resources",
+      "gcp_resources", 
+      "docker_resources",
+      "github_resources",
+      "kubernetes_resources"
+    ],
+    "cleanup_order": [
+      "kubernetes_resources",
+      "github_resources",
+      "docker_resources",
+      "gcp_resources",
+      "aws_resources"
+    ]
+  },
+  "monitoring": {
+    "enabled": true,
+    "metrics": [
+      "resource_creation_time",
+      "resource_usage",
+      "course_completion_rate",
+      "error_rate"
+    ],
+    "alerts": [
+      "resource_creation_failure",
+      "course_completion_failure",
+      "resource_cleanup_failure"
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+# 개발용 Dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+# 개발 의존성 포함 설치
+COPY package*.json ./
+RUN npm install && npm cache clean --force
+
+# 소스 코드 복사
+COPY . .
+
+# 포트 노출
+EXPOSE 3000
+
+# 개발 서버 시작 (핫 리로드 지원)
+CMD ["npm", "start"]

@@ -1,0 +1,449 @@
+# ECR 최적화된 고급 CI/CD 파이프라인
+name: ECR Optimized CI/CD Pipeline
+
+on:
+  push:
+    branches: [ master, day2-advanced, develop, feature/* ]
+  pull_request:
+    branches: [ master, day2-advanced, develop ]
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: '클라우드 프로바이더를 선택하세요'
+        required: true
+        default: 'aws'
+        type: choice
+        options:
+          - aws
+          - gcp
+          - both
+      environment:
+        description: '배포 환경을 선택하세요'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+  security-events: write
+  packages: write
+
+env:
+  REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  IMAGE_NAME: github-actions-demo-day2
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+
+jobs:
+  # 코드 품질 검사
+  quality-check:
+    name: 코드 품질 검사
+    runs-on: ubuntu-latest
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: Node.js 설정
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: 의존성 설치
+      run: npm ci
+      
+    - name: 린팅 검사
+      run: npm run lint
+      
+    - name: 코드 포맷팅 검사
+      run: npm run format -- --check
+      
+    - name: 보안 감사
+      run: npm audit --audit-level moderate
+
+  # 멀티 환경 테스트
+  test:
+    name: 멀티 환경 테스트
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        node-version: [16, 18, 20]
+        environment: [staging, production]
+    services:
+      postgres:
+        image: postgres:13-alpine
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: myapp_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:6-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: Node.js ${{ matrix.node-version }} 설정
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        
+    - name: 의존성 설치
+      run: npm ci
+      
+    - name: 환경 변수 설정
+      run: |
+        echo "NODE_ENV=${{ matrix.environment }}" >> $GITHUB_ENV
+        echo "DB_HOST=localhost" >> $GITHUB_ENV
+        echo "DB_PORT=5432" >> $GITHUB_ENV
+        echo "DB_NAME=myapp_test" >> $GITHUB_ENV
+        echo "DB_USER=postgres" >> $GITHUB_ENV
+        echo "DB_PASSWORD=password" >> $GITHUB_ENV
+        echo "REDIS_HOST=localhost" >> $GITHUB_ENV
+        echo "REDIS_PORT=6379" >> $GITHUB_ENV
+      
+    - name: 테스트 실행
+      run: |
+        echo "🧪 테스트 실행 중..."
+        npm run test:unit
+        npm run test:integration
+
+  # ECR 이미지 빌드 및 푸시
+  build-and-push:
+    name: ECR 이미지 빌드 및 푸시
+    runs-on: ubuntu-latest
+    needs: [quality-check, test]
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-uri: ${{ steps.build.outputs.image }}
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: AWS ECR 로그인
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+        
+    - name: ECR 로그인
+      id: ecr-login
+      uses: aws-actions/amazon-ecr-login@v2
+        
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: ECR 이미지 빌드 및 푸시
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        platforms: linux/amd64
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+          ${{ env.REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          ${{ env.REGISTRY }}/${{ env.ECR_REPOSITORY }}:v2.0.0
+          ${{ env.REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.ref_name }}-${{ github.sha }}
+        labels: |
+          org.opencontainers.image.title=GitHub Actions Demo Day2
+          org.opencontainers.image.description=ECR Optimized CI/CD Pipeline Demo
+          org.opencontainers.image.version=v2.0.0
+          org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+
+  # 보안 스캔
+  security-scan:
+    name: ECR 보안 스캔
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: Trivy 보안 스캔
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: Trivy 스캔 결과 업로드
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # AWS VM 배포 (STAGING)
+  deploy-aws-staging:
+    name: AWS 배포 (STAGING)
+    runs-on: ubuntu-latest
+    needs: [build-and-push, security-scan]
+    if: (github.ref == 'refs/heads/day2-advanced' || github.event.inputs.environment == 'staging') && (github.event.inputs.provider == null || github.event.inputs.provider == 'aws' || github.event.inputs.provider == 'both')
+    environment: aws-staging
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: AWS VM 배포
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.STAGING_VM_HOST }}
+        username: ${{ secrets.STAGING_VM_USERNAME }}
+        key: ${{ secrets.STAGING_VM_SSH_KEY }}
+        script: |
+          # AWS CLI 설치 및 설정
+          if ! command -v aws &> /dev/null; then
+            echo "📦 AWS CLI 설치 중..."
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+            rm -rf aws awscliv2.zip
+          fi
+          
+          # AWS 자격 증명 설정
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set default.region ${{ secrets.AWS_REGION }}
+          
+          # 환경 변수 설정
+          export DB_PASSWORD="${{ secrets.STAGING_DB_PASSWORD }}"
+          export REDIS_PASSWORD="${{ secrets.STAGING_REDIS_PASSWORD }}"
+          export CONTAINER_PREFIX="aws-staging"
+          export NODE_ENV="staging"
+          export PORT="3000"
+          export ECR_REGISTRY="${{ env.REGISTRY }}"
+          export ECR_REPOSITORY="${{ env.ECR_REPOSITORY }}"
+          export IMAGE_TAG="${{ github.sha }}"
+          export DB_HOST="postgres"
+          export DB_PORT="5432"
+          export DB_NAME="github_actions_demo"
+          export DB_USER="postgres"
+          export REDIS_HOST="redis"
+          export REDIS_PORT="6379"
+          
+          # 작업 디렉토리 생성 및 이동
+          mkdir -p /home/${{ secrets.STAGING_VM_USERNAME }}/app
+          cd /home/${{ secrets.STAGING_VM_USERNAME }}/app
+          
+          # 기존 서비스 중지
+          if [ -f docker-compose.prod.yml ]; then
+            docker-compose -f docker-compose.prod.yml down
+          fi
+          
+          # ECR 로그인 및 최신 이미지 풀
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.REGISTRY }}
+          docker pull ${{ env.REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+          
+          # 이전 이미지 정리
+          docker image prune -f
+          
+          # Docker Compose로 서비스 시작
+          docker-compose -f docker-compose.prod.yml up -d
+          
+          # 서비스 시작 대기
+          echo "⏳ 서비스 시작을 기다리는 중..."
+          sleep 30
+          
+          # 헬스체크
+          echo "🏥 헬스체크 시작..."
+          for i in {1..10}; do
+            echo "헬스체크 시도 $i/10..."
+            if curl -f http://localhost/health; then
+              echo "✅ 헬스체크 성공!"
+              break
+            fi
+            if [ $i -eq 10 ]; then
+              echo "❌ 헬스체크 실패 - 서비스 로그 확인"
+              docker-compose -f docker-compose.prod.yml logs
+              exit 1
+            fi
+            sleep 10
+          done
+          
+          echo "✅ AWS Staging 배포 완료!"
+          echo "🌐 Application URL: http://${{ secrets.STAGING_VM_HOST }}"
+
+    - name: 필요한 파일들을 원격 서버에 복사
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.STAGING_VM_HOST }}
+        username: ${{ secrets.STAGING_VM_USERNAME }}
+        key: ${{ secrets.STAGING_VM_SSH_KEY }}
+        source: "docker-compose.prod.yml,nginx/nginx.prod.conf,Dockerfile,package.json,package-lock.json,src/"
+        target: "/home/${{ secrets.STAGING_VM_USERNAME }}/app/"
+
+  # GCP VM 배포 (STAGING)
+  deploy-gcp-staging:
+    name: GCP 배포 (STAGING)
+    runs-on: ubuntu-latest
+    needs: [build-and-push, security-scan]
+    if: (github.ref == 'refs/heads/day2-advanced' || github.event.inputs.environment == 'staging') && (github.event.inputs.provider == null || github.event.inputs.provider == 'gcp' || github.event.inputs.provider == 'both')
+    environment: gcp-staging
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: GCP VM 배포
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.STAGING_VM_HOST }}
+        username: ${{ secrets.STAGING_VM_USERNAME }}
+        key: ${{ secrets.STAGING_VM_SSH_KEY }}
+        script: |
+          # AWS CLI 설치 및 설정 (ECR 접근용)
+          if ! command -v aws &> /dev/null; then
+            echo "📦 AWS CLI 설치 중..."
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+            rm -rf aws awscliv2.zip
+          fi
+          
+          # AWS 자격 증명 설정
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set default.region ${{ secrets.AWS_REGION }}
+          
+          # 환경 변수 설정
+          export DB_PASSWORD="${{ secrets.STAGING_DB_PASSWORD }}"
+          export REDIS_PASSWORD="${{ secrets.STAGING_REDIS_PASSWORD }}"
+          export CONTAINER_PREFIX="gcp-staging"
+          export NODE_ENV="staging"
+          export PORT="3000"
+          export ECR_REGISTRY="${{ env.REGISTRY }}"
+          export ECR_REPOSITORY="${{ env.ECR_REPOSITORY }}"
+          export IMAGE_TAG="${{ github.sha }}"
+          export DB_HOST="postgres"
+          export DB_PORT="5432"
+          export DB_NAME="github_actions_demo"
+          export DB_USER="postgres"
+          export REDIS_HOST="redis"
+          export REDIS_PORT="6379"
+          
+          # 작업 디렉토리 생성 및 이동
+          mkdir -p /home/${{ secrets.STAGING_VM_USERNAME }}/app
+          cd /home/${{ secrets.STAGING_VM_USERNAME }}/app
+          
+          # 기존 서비스 중지
+          if [ -f docker-compose.prod.yml ]; then
+            docker-compose -f docker-compose.prod.yml down
+          fi
+          
+          # ECR 로그인 및 최신 이미지 풀
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.REGISTRY }}
+          docker pull ${{ env.REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+          
+          # 이전 이미지 정리
+          docker image prune -f
+          
+          # Docker Compose로 서비스 시작
+          docker-compose -f docker-compose.prod.yml up -d
+          
+          # 서비스 시작 대기
+          echo "⏳ 서비스 시작을 기다리는 중..."
+          sleep 30
+          
+          # 헬스체크
+          echo "🏥 헬스체크 시작..."
+          for i in {1..10}; do
+            echo "헬스체크 시도 $i/10..."
+            if curl -f http://localhost/health; then
+              echo "✅ 헬스체크 성공!"
+              break
+            fi
+            if [ $i -eq 10 ]; then
+              echo "❌ 헬스체크 실패 - 서비스 로그 확인"
+              docker-compose -f docker-compose.prod.yml logs
+              exit 1
+            fi
+            sleep 10
+          done
+          
+          echo "✅ GCP Staging 배포 완료!"
+          echo "🌐 Application URL: http://${{ secrets.STAGING_VM_HOST }}"
+
+    - name: 필요한 파일들을 원격 서버에 복사
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.STAGING_VM_HOST }}
+        username: ${{ secrets.STAGING_VM_USERNAME }}
+        key: ${{ secrets.STAGING_VM_SSH_KEY }}
+        source: "docker-compose.prod.yml,nginx/nginx.prod.conf,Dockerfile,package.json,package-lock.json,src/"
+        target: "/home/${{ secrets.STAGING_VM_USERNAME }}/app/"
+
+  # 배포 후 테스트
+  post-deployment-test:
+    name: 배포 후 테스트
+    runs-on: ubuntu-latest
+    needs: [deploy-aws-staging, deploy-gcp-staging]
+    if: always() && (needs.deploy-aws-staging.result == 'success' || needs.deploy-gcp-staging.result == 'success')
+    steps:
+    - name: 배포된 애플리케이션 테스트
+      run: |
+        # AWS 스테이징 환경 테스트
+        if [ "${{ needs.deploy-aws-staging.result }}" == "success" ]; then
+          echo "Testing AWS staging environment..."
+          curl -f http://${{ secrets.STAGING_VM_HOST }}/health
+          curl -f http://${{ secrets.STAGING_VM_HOST }}/api/users
+          echo "✅ AWS staging environment tests passed"
+        fi
+        
+        # GCP 스테이징 환경 테스트
+        if [ "${{ needs.deploy-gcp-staging.result }}" == "success" ]; then
+          echo "Testing GCP staging environment..."
+          curl -f http://${{ secrets.STAGING_VM_HOST }}/health
+          curl -f http://${{ secrets.STAGING_VM_HOST }}/api/users
+          echo "✅ GCP staging environment tests passed"
+        fi
+
+  # 알림
+  notify:
+    name: 배포 알림
+    runs-on: ubuntu-latest
+    needs: [deploy-aws-staging, deploy-gcp-staging, post-deployment-test]
+    if: always()
+    steps:
+    - name: 배포 결과 알림
+      run: |
+        echo "🎯 ECR Optimized CI/CD Pipeline Summary"
+        echo "======================================"
+        echo "📦 Build: ✅ Success"
+        echo "🧪 Tests: ✅ Success"
+        echo "🔒 Security Scan: ✅ Success"
+        echo "🚀 AWS Staging: ${{ needs.deploy-aws-staging.result }}"
+        echo "🚀 GCP Staging: ${{ needs.deploy-gcp-staging.result }}"
+        echo "✅ Post-deployment Tests: ${{ needs.post-deployment-test.result }}"
+        echo ""
+        echo "🌐 Deployed URLs:"
+        if [ "${{ needs.deploy-aws-staging.result }}" == "success" ]; then
+          echo "  AWS Staging: http://${{ secrets.STAGING_VM_HOST }}"
+        fi
+        if [ "${{ needs.deploy-gcp-staging.result }}" == "success" ]; then
+          echo "  GCP Staging: http://${{ secrets.STAGING_VM_HOST }}"
+        fi
+        echo ""
+        echo "📊 Pipeline completed at: $(date)"
+        echo "🐳 ECR Registry: ${{ env.REGISTRY }}"
+        echo "📦 Repository: ${{ env.ECR_REPOSITORY }}"

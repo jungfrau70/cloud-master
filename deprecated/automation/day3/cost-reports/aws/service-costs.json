@@ -1,0 +1,48 @@
+{
+  "Service": "AWS CloudFormation",
+  "Cost": "0"
+}
+{
+  "Service": "AWS CloudShell",
+  "Cost": "0.0000006277"
+}
+{
+  "Service": "AWS Cost Explorer",
+  "Cost": "0"
+}
+{
+  "Service": "AWS Data Transfer",
+  "Cost": "-0.0003677571"
+}
+{
+  "Service": "AWS Key Management Service",
+  "Cost": "0"
+}
+{
+  "Service": "EC2 - Other",
+  "Cost": "0.0003664397"
+}
+{
+  "Service": "Amazon Elastic Compute Cloud - Compute",
+  "Cost": "0.000000719"
+}
+{
+  "Service": "Amazon Elastic Container Service for Kubernetes",
+  "Cost": "0"
+}
+{
+  "Service": "Amazon Simple Storage Service",
+  "Cost": "0.000000002"
+}
+{
+  "Service": "Amazon Virtual Private Cloud",
+  "Cost": "0"
+}
+{
+  "Service": "AmazonCloudWatch",
+  "Cost": "0"
+}
+{
+  "Service": "Tax",
+  "Cost": "0"
+}

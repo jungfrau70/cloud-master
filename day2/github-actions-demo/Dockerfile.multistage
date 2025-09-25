@@ -1,0 +1,47 @@
+# 🏗️ 멀티스테이지 Dockerfile (고급 최적화)
+# 1단계: 빌드 환경 준비 (멀티스테이지 빌드)
+FROM node:18-alpine AS builder
+# 왜 alpine? -> 매우 가벼운 Linux 배포판 (보안성 + 속도)
+
+# 작업 디렉토리 설정
+WORKDIR /app
+
+# 패키지 파일만 먼저 복사 (캐시 최적화)
+COPY package*.json ./
+
+# 의존성 설치 (package-lock.json이 있으면 ci, 없으면 install)
+RUN if [ -f package-lock.json ]; then \
+        npm ci --omit=dev && npm cache clean --force; \
+    else \
+        npm install --omit=dev && npm cache clean --force; \
+    fi
+
+# 🚀 2단계: 런타임 환경 (실제 실행용)
+FROM node:18-alpine AS runtime
+
+# 🔒 보안을 위한 비root 사용자 생성
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001
+# 왜 비root? -> 보안상 root 권한으로 실행하면 위험
+
+# 작업 디렉토리 설정
+WORKDIR /app
+
+# 의존성 복사 (빌드 단계에서 가져오기)
+COPY --from=builder /app/node_modules ./node_modules
+
+# 소스 코드 복사 (소유자 변경)
+COPY --chown=nextjs:nodejs . .
+
+# 사용자 변경 (보안)
+USER nextjs
+
+# 포트 노출 (외부에서 접근 가능하게)
+EXPOSE 3000
+
+# 🏥 헬스 체크 (컨테이너가 살아있는지 확인)
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+
+# 🚀 애플리케이션 시작
+CMD ["node", "src/app.js"]

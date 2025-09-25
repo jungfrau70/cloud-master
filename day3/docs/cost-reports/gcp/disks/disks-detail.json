@@ -1,0 +1,59 @@
+[
+  {
+    "architecture": "X86_64",
+    "creationTimestamp": "2025-09-20T21:45:09.708-07:00",
+    "enableConfidentialCompute": false,
+    "guestOsFeatures": [
+      {
+        "type": "VIRTIO_SCSI_MULTIQUEUE"
+      },
+      {
+        "type": "SEV_CAPABLE"
+      },
+      {
+        "type": "SEV_SNP_CAPABLE"
+      },
+      {
+        "type": "SEV_LIVE_MIGRATABLE"
+      },
+      {
+        "type": "SEV_LIVE_MIGRATABLE_V2"
+      },
+      {
+        "type": "IDPF"
+      },
+      {
+        "type": "TDX_CAPABLE"
+      },
+      {
+        "type": "UEFI_COMPATIBLE"
+      },
+      {
+        "type": "GVNIC"
+      }
+    ],
+    "id": "2739353594970127418",
+    "kind": "compute#disk",
+    "labelFingerprint": "42WmSpB8rSM=",
+    "lastAttachTimestamp": "2025-09-20T21:45:10.483-07:00",
+    "licenseCodes": [
+      "5511465778777431107"
+    ],
+    "licenses": [
+      "https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/licenses/ubuntu-2204-lts"
+    ],
+    "name": "cloud-deployment-server",
+    "physicalBlockSizeBytes": "4096",
+    "satisfiesPzi": true,
+    "selfLink": "https://www.googleapis.com/compute/v1/projects/cloud-deployment-471606/zones/asia-northeast3-a/disks/cloud-deployment-server",
+    "sizeGb": "20",
+    "sourceImage": "https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/ubuntu-2204-jammy-v20250918",
+    "sourceImageId": "6682370753677025532",
+    "status": "READY",
+    "type": "https://www.googleapis.com/compute/v1/projects/cloud-deployment-471606/zones/asia-northeast3-a/diskTypes/pd-standard",
+    "users": [
+      "https://www.googleapis.com/compute/v1/projects/cloud-deployment-471606/zones/asia-northeast3-a/instances/cloud-deployment-server"
+    ],
+    "zone": "https://www.googleapis.com/compute/v1/projects/cloud-deployment-471606/zones/asia-northeast3-a"
+  }
+]

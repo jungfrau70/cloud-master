@@ -1,0 +1,2 @@
+NAME                     ZONE                                                                                            SIZE_GB  TYPE         STATUS  CREATION_TIMESTAMP
+cloud-deployment-server  https://www.googleapis.com/compute/v1/projects/cloud-deployment-471606/zones/asia-northeast3-a  20       pd-standard  READY   2025-09-20T21:45:09.708-07:00

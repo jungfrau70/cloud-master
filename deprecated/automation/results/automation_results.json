@@ -1,0 +1,70 @@
+{
+  "course_name": "Cloud Master Course",
+  "generated_at": "2025-09-11T12:00:40.655511",
+  "day_plans": [
+    {
+      "day": 1,
+      "title": "Docker, Git/GitHub, GitHub Actions ",
+      "topics": [
+        "Docker    ",
+        "Git/GitHub   ",
+        "GitHub Actions CI/CD ",
+        "VM    "
+      ],
+      "hands_on_labs": [
+        "Node.js   ",
+        "GitHub Actions CI/CD  ",
+        "  VM  "
+      ],
+      "duration_hours": 7,
+      "prerequisites": [
+        "Cloud Basic  "
+      ]
+    },
+    {
+      "day": 2,
+      "title": " CI/CD  VM   ",
+      "topics": [
+        "Docker    ",
+        "GitHub Actions  ",
+        "VM    ",
+        "   "
+      ],
+      "hands_on_labs": [
+        " Docker    ",
+        " CI/CD  ",
+        "    "
+      ],
+      "duration_hours": 7,
+      "prerequisites": [
+        "Day 1 "
+      ]
+    },
+    {
+      "day": 3,
+      "title": " , ,  ",
+      "topics": [
+        "   Auto Scaling",
+        "   ",
+        "    ",
+        "    "
+      ],
+      "hands_on_labs": [
+        "VM     ",
+        "   ",
+        "     ",
+        "     "
+      ],
+      "duration_hours": 7,
+      "prerequisites": [
+        "Day 2 "
+      ]
+    }
+  ],
+  "scripts_generated": [
+    "docker_basics.sh",
+    "git_github_basics.sh",
+    "github_actions.sh",
+    "vm_deployment.sh"
+  ]
+}

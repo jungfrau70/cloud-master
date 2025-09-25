@@ -1,0 +1,353 @@
+name: Blue-Green Deployment
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - staging
+        - production
+      aws_region:
+        description: 'AWS Region'
+        required: true
+        default: 'ap-northeast-2'
+        type: string
+      gcp_zone:
+        description: 'GCP Zone'
+        required: true
+        default: 'asia-northeast3-a'
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  AWS_REGION: ${{ github.event.inputs.aws_region || 'ap-northeast-2' }}
+  GCP_ZONE: ${{ github.event.inputs.gcp_zone || 'asia-northeast3-a' }}
+  ENVIRONMENT: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production') || 'staging' }}
+
+jobs:
+  # Blue-Green 배포 준비
+  prepare-deployment:
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+      deployment-id: ${{ steps.deployment-id.outputs.id }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=sha,prefix={{branch}}-
+          type=raw,value=${{ env.ENVIRONMENT }}-blue
+          type=raw,value=${{ env.ENVIRONMENT }}-green
+
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Generate deployment ID
+      id: deployment-id
+      run: echo "id=$(date +%s)" >> $GITHUB_OUTPUT
+
+  # AWS Blue-Green 배포
+  deploy-aws:
+    runs-on: ubuntu-latest
+    needs: prepare-deployment
+    environment: ${{ env.ENVIRONMENT }}-aws
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Deploy to Blue environment (AWS)
+      run: |
+        # 현재 트래픽이 Green에 있는지 확인
+        CURRENT_COLOR=$(aws elbv2 describe-target-groups --names my-app-targets --query 'TargetGroups[0].TargetGroupName' --output text | grep -o 'green\|blue' || echo 'blue')
+        
+        if [ "$CURRENT_COLOR" = "green" ]; then
+          NEW_COLOR="blue"
+        else
+          NEW_COLOR="green"
+        fi
+        
+        echo "Deploying to $NEW_COLOR environment"
+        
+        # Auto Scaling Group 업데이트
+        aws autoscaling update-auto-scaling-group \
+          --auto-scaling-group-name my-app-asg-$NEW_COLOR \
+          --launch-template LaunchTemplateName=my-app-template,Version='$Latest'
+        
+        # 인스턴스 새로고침
+        aws autoscaling start-instance-refresh \
+          --auto-scaling-group-name my-app-asg-$NEW_COLOR \
+          --preferences MinHealthyPercentage=50,InstanceWarmup=300
+
+    - name: Wait for Blue deployment to be ready
+      run: |
+        # 배포 완료 대기
+        aws autoscaling wait instance-refresh-complete \
+          --auto-scaling-group-name my-app-asg-$NEW_COLOR
+        
+        # 헬스 체크 대기
+        for i in {1..30}; do
+          if curl -f -s http://$ALB_DNS/health > /dev/null; then
+            echo "Blue environment is healthy"
+            break
+          else
+            echo "Waiting for Blue environment to be healthy... ($i/30)"
+            sleep 10
+          fi
+        done
+
+    - name: Switch traffic to Blue (AWS)
+      run: |
+        # Target Group 업데이트
+        aws elbv2 modify-target-group \
+          --target-group-arn $TARGET_GROUP_ARN \
+          --health-check-path /health \
+          --health-check-interval-seconds 30
+        
+        # 트래픽 전환
+        aws elbv2 modify-listener \
+          --listener-arn $LISTENER_ARN \
+          --default-actions Type=forward,TargetGroupArn=$TARGET_GROUP_ARN
+
+    - name: Clean up old Green environment (AWS)
+      if: success()
+      run: |
+        # 이전 환경 정리
+        aws autoscaling update-auto-scaling-group \
+          --auto-scaling-group-name my-app-asg-$OLD_COLOR \
+          --min-size 0 \
+          --max-size 0 \
+          --desired-capacity 0
+
+  # GCP Blue-Green 배포
+  deploy-gcp:
+    runs-on: ubuntu-latest
+    needs: prepare-deployment
+    environment: ${{ env.ENVIRONMENT }}-gcp
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Deploy to Blue environment (GCP)
+      run: |
+        # 현재 트래픽이 Green에 있는지 확인
+        CURRENT_COLOR=$(gcloud compute instance-groups managed describe my-app-mig-green --zone=${{ env.GCP_ZONE }} --format="value(name)" 2>/dev/null | grep -o 'green\|blue' || echo 'blue')
+        
+        if [ "$CURRENT_COLOR" = "green" ]; then
+          NEW_COLOR="blue"
+        else
+          NEW_COLOR="green"
+        fi
+        
+        echo "Deploying to $NEW_COLOR environment"
+        
+        # Managed Instance Group 업데이트
+        gcloud compute instance-groups managed rolling-action start-update my-app-mig-$NEW_COLOR \
+          --zone=${{ env.GCP_ZONE }} \
+          --template=my-app-template-$NEW_COLOR \
+          --max-unavailable=1 \
+          --min-ready=2
+
+    - name: Wait for Blue deployment to be ready
+      run: |
+        # 배포 완료 대기
+        gcloud compute instance-groups managed wait-until-stable my-app-mig-$NEW_COLOR \
+          --zone=${{ env.GCP_ZONE }}
+        
+        # 헬스 체크 대기
+        for i in {1..30}; do
+          if curl -f -s http://$LB_IP/health > /dev/null; then
+            echo "Blue environment is healthy"
+            break
+          else
+            echo "Waiting for Blue environment to be healthy... ($i/30)"
+            sleep 10
+          fi
+        done
+
+    - name: Switch traffic to Blue (GCP)
+      run: |
+        # Backend Service 업데이트
+        gcloud compute backend-services update my-app-backend \
+          --global \
+          --backend-group=my-app-mig-$NEW_COLOR \
+          --backend-group-zone=${{ env.GCP_ZONE }}
+
+    - name: Clean up old Green environment (GCP)
+      if: success()
+      run: |
+        # 이전 환경 정리
+        gcloud compute instance-groups managed resize my-app-mig-$OLD_COLOR \
+          --zone=${{ env.GCP_ZONE }} \
+          --size=0
+
+  # Kubernetes Blue-Green 배포
+  deploy-k8s:
+    runs-on: ubuntu-latest
+    needs: prepare-deployment
+    environment: ${{ env.ENVIRONMENT }}-k8s
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+
+    - name: Configure kubectl for AWS EKS
+      run: |
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name my-app-cluster
+
+    - name: Deploy to Blue environment (K8s)
+      run: |
+        # 현재 트래픽이 Green에 있는지 확인
+        CURRENT_COLOR=$(kubectl get service my-app-service -o jsonpath='{.spec.selector.version}' || echo 'blue')
+        
+        if [ "$CURRENT_COLOR" = "green" ]; then
+          NEW_COLOR="blue"
+        else
+          NEW_COLOR="green"
+        fi
+        
+        echo "Deploying to $NEW_COLOR environment"
+        
+        # Blue 환경 배포
+        kubectl apply -f k8s/overlays/${{ env.ENVIRONMENT }}/$NEW_COLOR/
+        
+        # 배포 상태 확인
+        kubectl rollout status deployment/my-app-$NEW_COLOR --timeout=300s
+
+    - name: Wait for Blue deployment to be ready
+      run: |
+        # 헬스 체크 대기
+        for i in {1..30}; do
+          if kubectl get pods -l app=my-app,version=$NEW_COLOR --field-selector=status.phase=Running | grep -q Running; then
+            echo "Blue environment is ready"
+            break
+          else
+            echo "Waiting for Blue environment to be ready... ($i/30)"
+            sleep 10
+          fi
+        done
+
+    - name: Switch traffic to Blue (K8s)
+      run: |
+        # Service 업데이트
+        kubectl patch service my-app-service -p '{"spec":{"selector":{"version":"'$NEW_COLOR'"}}}'
+        
+        # 트래픽 전환 확인
+        kubectl get service my-app-service -o jsonpath='{.spec.selector.version}'
+
+    - name: Clean up old Green environment (K8s)
+      if: success()
+      run: |
+        # 이전 환경 정리
+        kubectl scale deployment my-app-$OLD_COLOR --replicas=0
+
+  # 배포 후 검증
+  post-deployment-verification:
+    runs-on: ubuntu-latest
+    needs: [deploy-aws, deploy-gcp, deploy-k8s]
+    if: always()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run health checks
+      run: |
+        # AWS 헬스 체크
+        if [ ! -z "$ALB_DNS" ]; then
+          echo "Checking AWS ALB health..."
+          curl -f -s http://$ALB_DNS/health || echo "AWS ALB health check failed"
+        fi
+        
+        # GCP 헬스 체크
+        if [ ! -z "$LB_IP" ]; then
+          echo "Checking GCP Load Balancer health..."
+          curl -f -s http://$LB_IP/health || echo "GCP Load Balancer health check failed"
+        fi
+        
+        # Kubernetes 헬스 체크
+        echo "Checking Kubernetes pods..."
+        kubectl get pods -l app=my-app
+
+    - name: Run smoke tests
+      run: |
+        # 간단한 스모크 테스트
+        if [ ! -z "$ALB_DNS" ]; then
+          echo "Running smoke tests on AWS ALB..."
+          for i in {1..5}; do
+            curl -f -s http://$ALB_DNS/ | grep -q "My App" && echo "Test $i passed" || echo "Test $i failed"
+          done
+        fi
+
+    - name: Send deployment notification
+      if: always()
+      run: |
+        # Slack 알림
+        if [ ! -z "$SLACK_WEBHOOK_URL" ]; then
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"🚀 Blue-Green Deployment completed for '${{ env.ENVIRONMENT }}' environment"}' \
+            $SLACK_WEBHOOK_URL
+        fi
+        
+        # Discord 알림
+        if [ ! -z "$DISCORD_WEBHOOK_URL" ]; then
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"content":"🚀 Blue-Green Deployment completed for '${{ env.ENVIRONMENT }}' environment"}' \
+            $DISCORD_WEBHOOK_URL
+        fi

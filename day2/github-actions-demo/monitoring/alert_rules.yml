@@ -1,0 +1,75 @@
+# 🚨 Prometheus 알림 규칙
+# 특정 조건에서 알림을 발생시킵니다
+
+groups:
+  - name: github-actions-demo
+    rules:
+      # 애플리케이션 다운 알림
+      - alert: ApplicationDown
+        expr: up{job="github-actions-demo"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "애플리케이션이 다운되었습니다"
+          description: "GitHub Actions Demo 애플리케이션이 1분 이상 응답하지 않습니다."
+
+      # 높은 CPU 사용률
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "높은 CPU 사용률"
+          description: "CPU 사용률이 80%를 초과했습니다: {{ $value }}%"
+
+      # 높은 메모리 사용률
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "높은 메모리 사용률"
+          description: "메모리 사용률이 85%를 초과했습니다: {{ $value }}%"
+
+      # 디스크 공간 부족
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "디스크 공간 부족"
+          description: "디스크 사용률이 90%를 초과했습니다: {{ $value }}%"
+
+      # 높은 응답 시간
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "높은 응답 시간"
+          description: "95% 응답 시간이 1초를 초과했습니다: {{ $value }}초"
+
+      # 에러율 증가
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) * 100 > 5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "높은 에러율"
+          description: "5xx 에러율이 5%를 초과했습니다: {{ $value }}%"
+
+      # Docker 컨테이너 재시작
+      - alert: ContainerRestart
+        expr: increase(container_restart_count[1h]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "컨테이너 재시작"
+          description: "컨테이너가 재시작되었습니다: {{ $labels.name }}"

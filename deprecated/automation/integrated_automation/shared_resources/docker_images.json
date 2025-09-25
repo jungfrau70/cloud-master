@@ -1,0 +1,118 @@
+{
+  "base_images": {
+    "ubuntu": {
+      "tag": "20.04",
+      "description": "Ubuntu 20.04 LTS base image",
+      "size": "72.8MB",
+      "used_in": ["cloud_basic", "cloud_master", "cloud_container"]
+    },
+    "alpine": {
+      "tag": "3.18",
+      "description": "Alpine Linux lightweight base image",
+      "size": "5.6MB",
+      "used_in": ["cloud_master", "cloud_container"]
+    },
+    "node": {
+      "tag": "18-alpine",
+      "description": "Node.js 18 on Alpine Linux",
+      "size": "109MB",
+      "used_in": ["cloud_master", "cloud_container"]
+    },
+    "python": {
+      "tag": "3.9-slim",
+      "description": "Python 3.9 slim image",
+      "size": "45.6MB",
+      "used_in": ["cloud_basic", "cloud_master", "cloud_container"]
+    }
+  },
+  "application_images": {
+    "nginx": {
+      "tag": "1.24-alpine",
+      "description": "Nginx web server",
+      "size": "23.4MB",
+      "used_in": ["cloud_master", "cloud_container"]
+    },
+    "redis": {
+      "tag": "7-alpine",
+      "description": "Redis in-memory database",
+      "size": "28.4MB",
+      "used_in": ["cloud_master", "cloud_container"]
+    },
+    "postgres": {
+      "tag": "15-alpine",
+      "description": "PostgreSQL database",
+      "size": "78.5MB",
+      "used_in": ["cloud_basic", "cloud_master", "cloud_container"]
+    },
+    "mongodb": {
+      "tag": "6.0",
+      "description": "MongoDB document database",
+      "size": "234MB",
+      "used_in": ["cloud_master", "cloud_container"]
+    }
+  },
+  "monitoring_images": {
+    "prometheus": {
+      "tag": "v2.45.0",
+      "description": "Prometheus monitoring system",
+      "size": "189MB",
+      "used_in": ["cloud_container"]
+    },
+    "grafana": {
+      "tag": "10.0.0",
+      "description": "Grafana visualization platform",
+      "size": "156MB",
+      "used_in": ["cloud_container"]
+    },
+    "jaeger": {
+      "tag": "1.47",
+      "description": "Jaeger distributed tracing",
+      "size": "45.2MB",
+      "used_in": ["cloud_container"]
+    }
+  },
+  "kubernetes_images": {
+    "k8s_gcr_io_pause": {
+      "tag": "3.8",
+      "description": "Kubernetes pause container",
+      "size": "711KB",
+      "used_in": ["cloud_container"]
+    },
+    "k8s_gcr_io_coredns": {
+      "tag": "v1.10.1",
+      "description": "CoreDNS cluster DNS",
+      "size": "49.8MB",
+      "used_in": ["cloud_container"]
+    },
+    "k8s_gcr_io_etcd": {
+      "tag": "3.5.7-0",
+      "description": "etcd distributed key-value store",
+      "size": "102MB",
+      "used_in": ["cloud_container"]
+    }
+  },
+  "registry_info": {
+    "docker_hub": {
+      "url": "https://hub.docker.com",
+      "username": "cloud-training",
+      "description": "Primary container registry"
+    },
+    "gcr_io": {
+      "url": "https://gcr.io",
+      "project": "cloud-training-project",
+      "description": "Google Container Registry"
+    },
+    "ecr_aws": {
+      "url": "https://123456789012.dkr.ecr.us-west-2.amazonaws.com",
+      "region": "us-west-2",
+      "description": "Amazon Elastic Container Registry"
+    }
+  },
+  "image_policies": {
+    "security_scanning": true,
+    "vulnerability_check": true,
+    "base_image_updates": "monthly",
+    "tag_pinning": true,
+    "signature_verification": true
+  }
+}

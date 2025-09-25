@@ -1,0 +1,48 @@
+{
+  "created_at": "2024-09-15T11:15:00Z",
+  "courses_completed": [],
+  "shared_resources": {
+    "aws": {
+      "vpc_id": null,
+      "subnet_id": null,
+      "security_group_id": null,
+      "s3_bucket": null,
+      "region": "us-west-2"
+    },
+    "gcp": {
+      "project_id": null,
+      "network_name": null,
+      "subnet_name": null,
+      "region": "us-central1"
+    },
+    "docker": {
+      "images": [],
+      "containers": [],
+      "registry": "docker.io"
+    },
+    "kubernetes": {
+      "cluster_name": null,
+      "namespace": "cloud-training",
+      "deployments": [],
+      "services": []
+    },
+    "github": {
+      "repositories": [],
+      "workflows": [],
+      "organization": "cloud-training-org"
+    }
+  },
+  "environment_variables": {
+    "PROJECT_PREFIX": "cloud-training",
+    "AWS_REGION": "us-west-2",
+    "GCP_REGION": "us-central1",
+    "DOCKER_REGISTRY": "docker.io",
+    "KUBERNETES_NAMESPACE": "cloud-training"
+  },
+  "integration_status": {
+    "basic_to_master": "not_started",
+    "master_to_container": "not_started",
+    "overall_status": "not_started"
+  },
+  "last_updated": "2024-09-15T11:15:00Z"
+}

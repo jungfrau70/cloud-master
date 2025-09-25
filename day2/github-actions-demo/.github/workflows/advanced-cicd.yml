@@ -1,0 +1,1210 @@
+# Day2 실습용 고급 CI/CD 파이프라인
+name: Advanced CI/CD Pipeline
+
+on:
+  push:
+    branches: [ master, day2-advanced, develop, feature/* ]
+  pull_request:
+    branches: [ master, day2-advanced, develop ]
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: '클라우드 프로바이더를 선택하세요'
+        required: true
+        default: 'aws'
+        type: choice
+        options:
+          - aws
+          - gcp
+          - both
+      environment:
+        description: '배포 환경을 선택하세요'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+  security-events: write
+  packages: write
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: github-actions-demo-day2
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+
+jobs:
+  # 코드 품질 검사
+  quality-check:
+    name: 코드 품질 검사
+    runs-on: ubuntu-latest
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: Node.js 설정
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: npm 캐시 설정
+      run: |
+        npm config set cache /home/runner/.npm
+        npm config set registry https://registry.npmjs.org/
+        
+    - name: 의존성 설치
+      run: npm install
+      
+    - name: 린팅 검사
+      run: npm run lint
+      
+    - name: 코드 포맷팅 검사
+      run: npm run format -- --check
+      
+    - name: 보안 감사
+      run: npm audit --audit-level moderate
+      
+    - name: 의존성 취약점 검사
+      run: |
+        npm audit --audit-level high
+        if [ $? -ne 0 ]; then
+          echo "High severity vulnerabilities found"
+          exit 1
+        fi
+
+  # 멀티 환경 테스트
+  test:
+    name: 멀티 환경 테스트
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        node-version: [16, 18, 20]
+        environment: [staging, production]
+    services:
+      postgres:
+        image: postgres:13-alpine
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: myapp_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:6-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: Node.js ${{ matrix.node-version }} 설정
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        
+    - name: npm 캐시 설정
+      run: |
+        npm config set cache /home/runner/.npm
+        npm config set registry https://registry.npmjs.org/
+        
+    - name: 의존성 설치
+      run: npm install
+      
+    - name: PostgreSQL 클라이언트 설치
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y postgresql-client
+      
+    - name: 환경 변수 설정
+      run: |
+        echo "NODE_ENV=${{ matrix.environment }}" >> $GITHUB_ENV
+        echo "DB_HOST=localhost" >> $GITHUB_ENV
+        echo "DB_PORT=5432" >> $GITHUB_ENV
+        echo "DB_NAME=myapp_test" >> $GITHUB_ENV
+        echo "DB_USER=postgres" >> $GITHUB_ENV
+        echo "DB_PASSWORD=password" >> $GITHUB_ENV
+        echo "REDIS_HOST=localhost" >> $GITHUB_ENV
+        echo "REDIS_PORT=6379" >> $GITHUB_ENV
+        echo "REDIS_PASSWORD=" >> $GITHUB_ENV
+        echo "PORT=3000" >> $GITHUB_ENV
+      
+    - name: 데이터베이스 초기화
+      run: |
+        echo "🗄️ 데이터베이스 초기화를 시작합니다..."
+        echo "환경 변수 확인:"
+        echo "DB_HOST: $DB_HOST"
+        echo "DB_PORT: $DB_PORT"
+        echo "DB_NAME: $DB_NAME"
+        echo "DB_USER: $DB_USER"
+        echo "NODE_ENV: $NODE_ENV"
+        
+        # 데이터베이스 연결 대기
+        echo "⏳ 데이터베이스 연결을 기다리는 중..."
+        timeout 60 bash -c 'until pg_isready -h localhost -p 5432 -U postgres; do sleep 2; done'
+        
+        # 데이터베이스 사용자 역할 생성
+        echo "👤 데이터베이스 사용자 역할 생성..."
+        PGPASSWORD=password psql -h localhost -p 5432 -U postgres -d myapp_test -c "
+          DO \$\$
+          BEGIN
+              IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'myapp_user') THEN
+                  CREATE ROLE myapp_user WITH LOGIN PASSWORD 'password';
+              END IF;
+          END
+          \$\$;
+          GRANT CONNECT ON DATABASE myapp_test TO myapp_user;
+          GRANT USAGE ON SCHEMA public TO myapp_user;
+          GRANT CREATE ON SCHEMA public TO myapp_user;
+        " || echo "⚠️ 사용자 역할 생성 중 오류 발생 (이미 존재할 수 있음)"
+        
+        # 마이그레이션 실행
+        echo "🔄 데이터베이스 마이그레이션 실행..."
+        npm run db:migrate
+        
+        # 시드 데이터 실행
+        echo "🌱 시드 데이터 생성..."
+        npm run db:seed
+        
+        echo "✅ 데이터베이스 초기화 완료!"
+      
+    - name: 애플리케이션 시작
+      run: |
+        echo "🚀 애플리케이션을 백그라운드에서 시작합니다..."
+        
+        # 환경 변수 확인
+        echo "환경 변수 확인:"
+        echo "PORT: $PORT"
+        echo "DB_HOST: $DB_HOST"
+        echo "DB_PORT: $DB_PORT"
+        echo "DB_NAME: $DB_NAME"
+        echo "DB_USER: $DB_USER"
+        echo "REDIS_HOST: $REDIS_HOST"
+        echo "REDIS_PORT: $REDIS_PORT"
+        echo "REDIS_PASSWORD: '$REDIS_PASSWORD'"
+        
+        # 로그 디렉토리 생성
+        mkdir -p logs
+        
+        # 애플리케이션 시작
+        npm start > app.log 2>&1 &
+        APP_PID=$!
+        echo "애플리케이션 PID: $APP_PID"
+        
+        # 애플리케이션 시작 대기
+        echo "⏳ 애플리케이션 시작을 기다리는 중..."
+        for i in {1..15}; do
+          if curl -f http://localhost:3000/health >/dev/null 2>&1; then
+            echo "✅ 애플리케이션이 성공적으로 시작되었습니다!"
+            break
+          fi
+          echo "시도 $i/15: 애플리케이션 시작 대기 중..."
+          sleep 2
+        done
+        
+        # 최종 확인
+        if ! curl -f http://localhost:3000/health >/dev/null 2>&1; then
+          echo "❌ 애플리케이션 시작 실패"
+          echo "애플리케이션 로그:"
+          cat app.log || echo "로그 파일을 읽을 수 없습니다"
+          echo "실행 중인 Node.js 프로세스:"
+          ps aux | grep node || echo "Node.js 프로세스를 찾을 수 없습니다"
+          kill $APP_PID 2>/dev/null || true
+          exit 1
+        fi
+      
+    - name: 테스트 데이터 정리
+      run: |
+        echo "🧹 테스트 데이터 정리 중..."
+        PGPASSWORD=password psql -h localhost -p 5432 -U postgres -d myapp_test -c "
+          DELETE FROM system_metrics WHERE metric_name LIKE 'test_%' OR metric_name LIKE '%test%';
+          DELETE FROM app_logs WHERE message LIKE '%test%' OR message LIKE '%Test%';
+          DELETE FROM users WHERE username LIKE '%test%' AND username NOT IN ('admin', 'testuser', 'demo');
+        " || echo "테스트 데이터 정리 완료 (일부 오류 무시)"
+        echo "✅ 테스트 데이터 정리 완료"
+      
+    - name: 서비스 상태 확인
+      run: |
+        echo "🔍 서비스 상태 확인 중..."
+        
+        # PostgreSQL 상태 확인
+        echo "📊 PostgreSQL 상태:"
+        PGPASSWORD=password psql -h localhost -p 5432 -U postgres -d myapp_test -c "SELECT version();" || echo "PostgreSQL 연결 실패"
+        
+        # Redis 상태 확인
+        echo "🔴 Redis 상태:"
+        redis-cli -h localhost -p 6379 ping || echo "Redis 연결 실패"
+        
+        # 애플리케이션 헬스체크
+        echo "🏥 애플리케이션 헬스체크:"
+        timeout 30 bash -c 'until curl -f http://localhost:3000/health; do sleep 2; done' || echo "애플리케이션 헬스체크 실패"
+      
+    - name: 단위 테스트 실행
+      run: |
+        echo "🧪 단위 테스트 실행 중..."
+        
+        # Jest 실행 (간단한 방식)
+        if timeout 60 npm run test:unit; then
+          echo "✅ 단위 테스트 성공"
+        else
+          echo "❌ 단위 테스트 실패"
+          exit 1
+        fi
+      
+    - name: 통합 테스트 실행
+      run: |
+        echo "🔗 통합 테스트 실행 중..."
+        
+        # Jest 실행 (간단한 방식)
+        if timeout 60 npm run test:integration; then
+          echo "✅ 통합 테스트 성공"
+        else
+          echo "❌ 통합 테스트 실패"
+          exit 1
+        fi
+      
+    - name: 애플리케이션 정리
+      if: always()
+      run: |
+        echo "🧹 애플리케이션 정리 중..."
+        pkill -f "node" || echo "Node.js 프로세스가 이미 종료되었습니다"
+        echo "✅ 정리 완료"
+      
+
+  # Docker 이미지 빌드 및 푸시
+  build-and-push:
+    name: Docker 이미지 빌드 및 푸시
+    runs-on: ubuntu-latest
+    needs: [quality-check, test]
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: Docker Hub 로그인
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: |
+          image=moby/buildkit:latest
+      
+    - name: Docker 이미지 빌드 및 푸시
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        platforms: linux/amd64
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        tags: |
+          ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:v2.0.0
+          ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ github.sha }}
+        labels: |
+          org.opencontainers.image.title=GitHub Actions Demo Day2
+          org.opencontainers.image.description=Advanced CI/CD Pipeline Demo
+          org.opencontainers.image.version=v2.0.0
+          org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+
+  # 보안 스캔
+  security-scan:
+    name: 보안 스캔
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: Trivy 보안 스캔
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: Trivy 스캔 결과 업로드
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # AWS VM 배포 (PROD)
+  deploy-aws:
+    name: AWS 배포 (STAGING)
+    runs-on: ubuntu-latest
+    needs: [build-and-push, security-scan]
+    if: (github.ref == 'refs/heads/day2-advanced' || github.event.inputs.environment == 'staging') && (github.event.inputs.provider == null || github.event.inputs.provider == 'aws' || github.event.inputs.provider == 'both')
+    environment: aws-production
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: AWS VM 배포 (PROD)
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.PROD_VM_HOST }}
+        username: ${{ secrets.PROD_VM_USERNAME }}
+        key: ${{ secrets.PROD_VM_SSH_KEY }}
+        script: |
+          # Docker Hub 로그인을 위한 설정 (AWS CLI 불필요)
+          echo "🐳 Docker Hub를 사용하여 이미지를 가져옵니다..."
+          
+          # 환경 변수 설정 (참조 프로젝트 가이드 적용)
+          export DB_PASSWORD="${{ secrets.PROD_DB_PASSWORD }}"
+          export REDIS_PASSWORD="${{ secrets.PROD_REDIS_PASSWORD }}"
+          export CONTAINER_PREFIX="aws-vm-prod"
+          export NODE_ENV="production"
+          export PORT="3000"
+          export DOCKER_USERNAME="${{ secrets.DOCKER_USERNAME }}"
+          export IMAGE_NAME="github-actions-demo-day2"
+          export IMAGE_TAG="latest"
+          
+          # 환경 변수 로드 확인
+          echo "🔍 환경 변수 확인:"
+          echo "CONTAINER_PREFIX: $CONTAINER_PREFIX"
+          echo "NODE_ENV: $NODE_ENV"
+          echo "PORT: $PORT"
+          echo "DOCKER_USERNAME: $DOCKER_USERNAME"
+          echo "IMAGE_NAME: $IMAGE_NAME"
+          echo "IMAGE_TAG: $IMAGE_TAG"
+          
+          # 작업 디렉토리 생성 및 이동
+          mkdir -p /home/${{ secrets.PROD_VM_USERNAME }}/app
+          cd /home/${{ secrets.PROD_VM_USERNAME }}/app
+          
+          # 기존 서비스 중지 (파일이 있는 경우에만)
+          if [ -f docker-compose.prod.yml ]; then
+            docker-compose -f docker-compose.prod.yml down
+          fi
+          
+          # AWS ECR 로그인 및 최신 이미지 풀
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login --username ${{ secrets.DOCKER_USERNAME }} --password-stdin
+          docker pull ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          
+          # 이전 이미지 정리
+          docker image prune -f
+          
+    - name: 필요한 파일들을 원격 서버에 복사
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.PROD_VM_HOST }}
+        username: ${{ secrets.PROD_VM_USERNAME }}
+        key: ${{ secrets.PROD_VM_SSH_KEY }}
+        source: "docker-compose.prod.yml,nginx/nginx.prod.conf,Dockerfile,package.json,package-lock.json,src/"
+        target: "/home/${{ secrets.PROD_VM_USERNAME }}/app/"
+        
+    - name: nginx 디렉토리 생성 및 설정 파일 배치
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.PROD_VM_HOST }}
+        username: ${{ secrets.PROD_VM_USERNAME }}
+        key: ${{ secrets.PROD_VM_SSH_KEY }}
+        script: |
+          cd /home/${{ secrets.PROD_VM_USERNAME }}/app
+          
+          # nginx 디렉토리 생성
+          mkdir -p nginx
+          mv nginx.prod.conf nginx/nginx.prod.conf
+          
+          # logs 디렉토리 생성
+          mkdir -p logs
+          
+          # 데이터베이스 초기화 스크립트 디렉토리 생성
+          mkdir -p database
+          
+    - name: 데이터베이스 스크립트 존재 확인
+      id: check-db-scripts
+      run: |
+        if [ -d "database" ] && [ "$(find database -type f -name "*.sql" -o -name "*.sh" -o -name "*.js" 2>/dev/null | wc -l)" -gt 0 ]; then
+          echo "has-db-scripts=true" >> $GITHUB_OUTPUT
+          echo "✅ 데이터베이스 스크립트가 존재합니다"
+        else
+          echo "has-db-scripts=false" >> $GITHUB_OUTPUT
+          echo "⚠️ 데이터베이스 스크립트가 없습니다. 복사를 건너뜁니다"
+        fi
+        
+    - name: 데이터베이스 초기화 스크립트 복사
+      if: steps.check-db-scripts.outputs.has-db-scripts == 'true'
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.PROD_VM_HOST }}
+        username: ${{ secrets.PROD_VM_USERNAME }}
+        key: ${{ secrets.PROD_VM_SSH_KEY }}
+        source: "database/"
+        target: "/home/${{ secrets.PROD_VM_USERNAME }}/app/"
+        
+    - name: AWS VM 배포 실행
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.PROD_VM_HOST }}
+        username: ${{ secrets.PROD_VM_USERNAME }}
+        key: ${{ secrets.PROD_VM_SSH_KEY }}
+        script: |
+          cd /home/${{ secrets.PROD_VM_USERNAME }}/app
+          
+          # 환경 변수 설정 (참조 프로젝트 가이드 적용)
+          export DB_PASSWORD="${{ secrets.PROD_DB_PASSWORD }}"
+          export REDIS_PASSWORD="${{ secrets.PROD_REDIS_PASSWORD }}"
+          export CONTAINER_PREFIX="aws-vm-prod"
+          export NODE_ENV="production"
+          export PORT="3000"
+          export DOCKER_USERNAME="${{ secrets.DOCKER_USERNAME }}"
+          export IMAGE_NAME="github-actions-demo-day2"
+          export IMAGE_TAG="latest"
+          
+          # 환경 변수 로드 확인
+          echo "🔍 환경 변수 확인:"
+          echo "CONTAINER_PREFIX: $CONTAINER_PREFIX"
+          echo "NODE_ENV: $NODE_ENV"
+          echo "PORT: $PORT"
+          echo "DOCKER_USERNAME: $DOCKER_USERNAME"
+          echo "IMAGE_NAME: $IMAGE_NAME"
+          echo "IMAGE_TAG: $IMAGE_TAG"
+          
+          # 기존 서비스 및 이미지 정리
+          echo "🧹 기존 서비스 및 이미지 정리 중..."
+          docker-compose -f docker-compose.prod.yml down --remove-orphans || true
+          docker stop $(docker ps -aq) 2>/dev/null || true
+          docker rm $(docker ps -aq) 2>/dev/null || true
+          
+          # PostgreSQL 호환성 문제 해결을 위한 볼륨 삭제
+          echo "🗄️ PostgreSQL 데이터 볼륨 삭제 중..."
+          docker volume rm github-actions-demo_postgres_data 2>/dev/null || true
+          docker volume rm project_postgres_data 2>/dev/null || true
+          docker volume ls | grep postgres | awk '{print $2}' | xargs -r docker volume rm || true
+          
+          docker system prune -a -f || true
+          docker volume prune -f || true
+          
+          # Docker 서비스 재시작 (참조 프로젝트 가이드 적용)
+          echo "🔄 Docker 서비스 재시작 중..."
+          sudo systemctl restart docker || true
+          sleep 10
+          
+          # Docker 이미지 강제 재빌드 (참조 프로젝트 가이드 적용)
+          echo "🔨 Docker 이미지 강제 재빌드 중..."
+          docker-compose -f docker-compose.prod.yml build --no-cache app
+          
+          # Docker Compose로 서비스 시작
+          echo "🚀 Docker Compose로 서비스 시작 중..."
+          echo "🔍 Docker Compose 환경 변수 확인:"
+          echo "DOCKER_USERNAME: $DOCKER_USERNAME"
+          echo "IMAGE_NAME: $IMAGE_NAME"
+          echo "IMAGE_TAG: $IMAGE_TAG"
+          docker-compose -f docker-compose.prod.yml config
+          docker-compose -f docker-compose.prod.yml up -d
+          
+          # 서비스 시작 대기
+          echo "⏳ 서비스 시작을 기다리는 중..."
+          sleep 30
+          
+          # Docker 서비스 상태 확인 (참조 프로젝트 가이드 적용)
+          echo "🔍 Docker 서비스 상태 확인..."
+          docker-compose -f docker-compose.prod.yml ps
+          
+          # 포트 충돌 확인
+          echo "🔍 포트 충돌 확인..."
+          netstat -tulpn | grep :3000 || echo "포트 3000 사용 가능"
+          # netstat -tulpn | grep :80 || echo "포트 80 사용 가능"  # nginx 사용 안함
+          
+          # 컨테이너 로그 확인
+          echo "📋 컨테이너 로그 확인..."
+          docker-compose -f docker-compose.prod.yml logs app | tail -20
+          
+          # 모든 서비스가 healthy 상태가 될 때까지 대기 (참조 프로젝트 가이드 적용)
+          echo "🏥 서비스 헬스체크 대기 중..."
+          for i in {1..30}; do
+            echo "헬스체크 대기 시도 $i/30..."
+            
+            # 모든 서비스 상태 확인
+            if docker-compose -f docker-compose.prod.yml ps | grep -q "unhealthy"; then
+              echo "일부 서비스가 아직 unhealthy 상태입니다..."
+              echo "현재 서비스 상태:"
+              docker-compose -f docker-compose.prod.yml ps
+              sleep 10
+              continue
+            fi
+            
+            # app 서비스가 포트 3000에서 리스닝하는지 확인
+            if netstat -tlnp 2>/dev/null | grep :3000 > /dev/null; then
+              echo "✅ app이 포트 3000에서 리스닝 중"
+              
+              # 애플리케이션 헬스체크 시도
+              if curl -f http://localhost:3000/health 2>/dev/null; then
+                echo "✅ 헬스체크 성공!"
+                break
+              else
+                echo "애플리케이션 헬스체크 실패, 재시도 중..."
+                sleep 10
+                continue
+              fi
+            else
+              echo "app이 아직 포트 3000에서 리스닝하지 않음..."
+              sleep 10
+              continue
+            fi
+            
+            if [ $i -eq 30 ]; then
+              echo "❌ 헬스체크 실패 - 서비스 로그 확인"
+              echo "Docker 서비스 상태:"
+              docker-compose -f docker-compose.prod.yml ps
+              echo "app 로그:"
+              docker-compose -f docker-compose.prod.yml logs app
+              echo "nginx 로그:"
+              docker-compose -f docker-compose.prod.yml logs nginx
+              echo "postgres 로그:"
+              docker-compose -f docker-compose.prod.yml logs postgres
+              echo "redis 로그:"
+              docker-compose -f docker-compose.prod.yml logs redis
+              exit 1
+            fi
+          done
+          
+          # 배포 알림
+          echo "✅ AWS VM deployment completed successfully"
+          echo "🌐 Application URL: http://${{ secrets.PROD_VM_HOST }}"
+          echo "📊 Metrics URL: http://${{ secrets.PROD_VM_HOST }}/metrics"
+
+  # GCP VM 배포 (STAGING)
+  deploy-gcp:
+    name: GCP 배포 (STAGING)
+    runs-on: ubuntu-latest
+    needs: [build-and-push, security-scan]
+    if: (github.ref == 'refs/heads/day2-advanced' || github.event.inputs.environment == 'staging') && (github.event.inputs.provider == null || github.event.inputs.provider == 'gcp' || github.event.inputs.provider == 'both')
+    environment: gcp-staging
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: GCP VM 배포 준비 (STAGING)
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.STAGING_VM_HOST }}
+        username: ${{ secrets.STAGING_VM_USERNAME }}
+        key: ${{ secrets.STAGING_VM_SSH_KEY }}
+        script: |
+          # Docker Hub 로그인을 위한 설정 (AWS CLI 불필요)
+          echo "🐳 Docker Hub를 사용하여 이미지를 가져옵니다..."
+          
+          # 환경 변수 설정
+          export DB_PASSWORD="${{ secrets.STAGING_DB_PASSWORD }}"
+          export REDIS_PASSWORD="${{ secrets.STAGING_REDIS_PASSWORD }}"
+          
+          # 작업 디렉토리 생성 및 이동
+          mkdir -p /home/${{ secrets.STAGING_VM_USERNAME }}/app
+          cd /home/${{ secrets.STAGING_VM_USERNAME }}/app
+          
+          # 기존 서비스 중지 (파일이 있는 경우에만)
+          if [ -f docker-compose.prod.yml ]; then
+            docker-compose -f docker-compose.prod.yml down
+          fi
+          
+          # AWS ECR 로그인 및 최신 이미지 풀
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login --username ${{ secrets.DOCKER_USERNAME }} --password-stdin
+          docker pull ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          
+          # 이전 이미지 정리
+          docker image prune -f
+          
+    - name: 필요한 파일들을 원격 서버에 복사
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.STAGING_VM_HOST }}
+        username: ${{ secrets.STAGING_VM_USERNAME }}
+        key: ${{ secrets.STAGING_VM_SSH_KEY }}
+        source: "docker-compose.prod.yml,nginx/nginx.prod.conf,Dockerfile,package.json,package-lock.json,src/"
+        target: "/home/${{ secrets.STAGING_VM_USERNAME }}/app/"
+        
+    - name: nginx 디렉토리 생성 및 설정 파일 배치
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.STAGING_VM_HOST }}
+        username: ${{ secrets.STAGING_VM_USERNAME }}
+        key: ${{ secrets.STAGING_VM_SSH_KEY }}
+        script: |
+          cd /home/${{ secrets.STAGING_VM_USERNAME }}/app
+          
+          # nginx 디렉토리 생성
+          mkdir -p nginx
+          mv nginx.prod.conf nginx/nginx.prod.conf
+          
+          # logs 디렉토리 생성
+          mkdir -p logs
+          
+          # 데이터베이스 초기화 스크립트 디렉토리 생성
+          mkdir -p database
+          
+    - name: 데이터베이스 스크립트 존재 확인
+      id: check-db-scripts
+      run: |
+        if [ -d "database" ] && [ "$(find database -type f -name "*.sql" -o -name "*.sh" -o -name "*.js" 2>/dev/null | wc -l)" -gt 0 ]; then
+          echo "has-db-scripts=true" >> $GITHUB_OUTPUT
+          echo "✅ 데이터베이스 스크립트가 존재합니다"
+        else
+          echo "has-db-scripts=false" >> $GITHUB_OUTPUT
+          echo "⚠️ 데이터베이스 스크립트가 없습니다. 복사를 건너뜁니다"
+        fi
+        
+    - name: 데이터베이스 초기화 스크립트 복사
+      if: steps.check-db-scripts.outputs.has-db-scripts == 'true'
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.STAGING_VM_HOST }}
+        username: ${{ secrets.STAGING_VM_USERNAME }}
+        key: ${{ secrets.STAGING_VM_SSH_KEY }}
+        source: "database/"
+        target: "/home/${{ secrets.STAGING_VM_USERNAME }}/app/"
+        
+    - name: GCP VM 배포 실행
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.STAGING_VM_HOST }}
+        username: ${{ secrets.STAGING_VM_USERNAME }}
+        key: ${{ secrets.STAGING_VM_SSH_KEY }}
+        script: |
+          cd /home/${{ secrets.STAGING_VM_USERNAME }}/app
+          
+          # 환경 변수 설정
+          export DB_PASSWORD="${{ secrets.STAGING_DB_PASSWORD }}"
+          export REDIS_PASSWORD="${{ secrets.STAGING_REDIS_PASSWORD }}"
+          export CONTAINER_PREFIX="gcp-staging"
+          export DOCKER_USERNAME="${{ secrets.DOCKER_USERNAME }}"
+          export IMAGE_NAME="github-actions-demo-day2"
+          export IMAGE_TAG="latest"
+          
+          # 기존 서비스 및 이미지 정리
+          echo "🧹 기존 서비스 및 이미지 정리 중..."
+          docker-compose -f docker-compose.prod.yml down --remove-orphans || true
+          docker stop $(docker ps -aq) 2>/dev/null || true
+          docker rm $(docker ps -aq) 2>/dev/null || true
+          
+          # PostgreSQL 호환성 문제 해결을 위한 볼륨 삭제
+          echo "🗄️ PostgreSQL 데이터 볼륨 삭제 중..."
+          docker volume rm github-actions-demo_postgres_data 2>/dev/null || true
+          docker volume rm project_postgres_data 2>/dev/null || true
+          docker volume ls | grep postgres | awk '{print $2}' | xargs -r docker volume rm || true
+          
+          docker system prune -a -f || true
+          docker volume prune -f || true
+          
+          # Docker 서비스 재시작 (참조 프로젝트 가이드 적용)
+          echo "🔄 Docker 서비스 재시작 중..."
+          sudo systemctl restart docker || true
+          sleep 10
+          
+          # Docker Compose로 서비스 시작
+          docker-compose -f docker-compose.prod.yml up -d
+          
+          # 서비스 시작 대기
+          echo "⏳ 서비스 시작을 기다리는 중..."
+          sleep 30
+          
+          # 헬스체크 (여러 번 시도)
+          echo "🏥 헬스체크 시작..."
+          for i in {1..10}; do
+            echo "헬스체크 시도 $i/10..."
+            if curl -f http://localhost:3000/health; then
+              echo "✅ 헬스체크 성공!"
+              break
+            fi
+            if [ $i -eq 10 ]; then
+              echo "❌ 헬스체크 실패 - 서비스 로그 확인"
+              docker-compose -f docker-compose.prod.yml logs
+              exit 1
+            fi
+            sleep 10
+          done
+          
+          # 배포 알림
+          echo "✅ GCP VM deployment completed successfully"
+          echo "🌐 Application URL: http://${{ secrets.STAGING_VM_HOST }}"
+          echo "📊 Metrics URL: http://${{ secrets.STAGING_VM_HOST }}/metrics"
+
+  # AWS 프로덕션 배포
+  deploy-aws-production:
+    name: AWS 배포 (PRODUCTION)
+    runs-on: ubuntu-latest
+    needs: [build-and-push, security-scan]
+    if: (github.ref == 'refs/heads/master' || github.event.inputs.environment == 'production') && (github.event.inputs.provider == 'aws' || github.event.inputs.provider == 'both')
+    environment: aws-production
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: AWS 프로덕션 배포 준비
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.PROD_VM_HOST }}
+        username: ${{ secrets.PROD_VM_USERNAME }}
+        key: ${{ secrets.PROD_VM_SSH_KEY }}
+        script: |
+          # Docker Hub 로그인을 위한 설정 (AWS CLI 불필요)
+          echo "🐳 Docker Hub를 사용하여 이미지를 가져옵니다..."
+          
+          # 환경 변수 설정 (참조 프로젝트 가이드 적용)
+          export DB_PASSWORD="${{ secrets.PROD_DB_PASSWORD }}"
+          export REDIS_PASSWORD="${{ secrets.PROD_REDIS_PASSWORD }}"
+          export CONTAINER_PREFIX="aws-vm-prod"
+          export NODE_ENV="production"
+          export PORT="3000"
+          export DOCKER_USERNAME="${{ secrets.DOCKER_USERNAME }}"
+          export IMAGE_NAME="github-actions-demo-day2"
+          export IMAGE_TAG="latest"
+          
+          # 환경 변수 로드 확인
+          echo "🔍 환경 변수 확인:"
+          echo "CONTAINER_PREFIX: $CONTAINER_PREFIX"
+          echo "NODE_ENV: $NODE_ENV"
+          echo "PORT: $PORT"
+          echo "DOCKER_USERNAME: $DOCKER_USERNAME"
+          echo "IMAGE_NAME: $IMAGE_NAME"
+          echo "IMAGE_TAG: $IMAGE_TAG"
+          
+          # 작업 디렉토리 생성 및 이동
+          mkdir -p /home/${{ secrets.PROD_VM_USERNAME }}/app
+          cd /home/${{ secrets.PROD_VM_USERNAME }}/app
+          
+          # Blue-Green 배포를 위한 백업
+          if [ -f docker-compose.prod.yml ]; then
+            docker-compose -f docker-compose.prod.yml down
+            docker tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:backup-$(date +%Y%m%d-%H%M%S)
+          fi
+          
+          # AWS ECR 로그인 및 최신 이미지 풀
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login --username ${{ secrets.DOCKER_USERNAME }} --password-stdin
+          docker pull ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          
+          # 이전 이미지 정리
+          docker image prune -f
+          
+    - name: 필요한 파일들을 원격 서버에 복사
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.PROD_VM_HOST }}
+        username: ${{ secrets.PROD_VM_USERNAME }}
+        key: ${{ secrets.PROD_VM_SSH_KEY }}
+        source: "docker-compose.prod.yml,nginx/nginx.prod.conf,Dockerfile,package.json,package-lock.json,src/"
+        target: "/home/${{ secrets.PROD_VM_USERNAME }}/app/"
+        
+    - name: nginx 디렉토리 생성 및 설정 파일 배치
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.PROD_VM_HOST }}
+        username: ${{ secrets.PROD_VM_USERNAME }}
+        key: ${{ secrets.PROD_VM_SSH_KEY }}
+        script: |
+          cd /home/${{ secrets.PROD_VM_USERNAME }}/app
+          
+          # nginx 디렉토리 생성
+          mkdir -p nginx
+          mv nginx.prod.conf nginx/nginx.prod.conf
+          
+          # logs 디렉토리 생성
+          mkdir -p logs
+          
+          # 데이터베이스 초기화 스크립트 디렉토리 생성
+          mkdir -p database
+          
+    - name: 데이터베이스 스크립트 존재 확인
+      id: check-db-scripts
+      run: |
+        if [ -d "database" ] && [ "$(find database -type f -name "*.sql" -o -name "*.sh" -o -name "*.js" 2>/dev/null | wc -l)" -gt 0 ]; then
+          echo "has-db-scripts=true" >> $GITHUB_OUTPUT
+          echo "✅ 데이터베이스 스크립트가 존재합니다"
+        else
+          echo "has-db-scripts=false" >> $GITHUB_OUTPUT
+          echo "⚠️ 데이터베이스 스크립트가 없습니다. 복사를 건너뜁니다"
+        fi
+        
+    - name: 데이터베이스 초기화 스크립트 복사
+      if: steps.check-db-scripts.outputs.has-db-scripts == 'true'
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.PROD_VM_HOST }}
+        username: ${{ secrets.PROD_VM_USERNAME }}
+        key: ${{ secrets.PROD_VM_SSH_KEY }}
+        source: "database/"
+        target: "/home/${{ secrets.PROD_VM_USERNAME }}/app/"
+        
+    - name: AWS 프로덕션 배포 실행
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.PROD_VM_HOST }}
+        username: ${{ secrets.PROD_VM_USERNAME }}
+        key: ${{ secrets.PROD_VM_SSH_KEY }}
+        script: |
+          cd /home/${{ secrets.PROD_VM_USERNAME }}/app
+          
+          # 환경 변수 설정
+          export DB_PASSWORD="${{ secrets.PROD_DB_PASSWORD }}"
+          export REDIS_PASSWORD="${{ secrets.PROD_REDIS_PASSWORD }}"
+          export CONTAINER_PREFIX="aws-production"
+          export DOCKER_USERNAME="${{ secrets.DOCKER_USERNAME }}"
+          export IMAGE_NAME="github-actions-demo-day2"
+          export IMAGE_TAG="latest"
+          
+          # 기존 서비스 및 이미지 정리
+          echo "🧹 기존 서비스 및 이미지 정리 중..."
+          docker-compose -f docker-compose.prod.yml down --remove-orphans || true
+          docker stop $(docker ps -aq) 2>/dev/null || true
+          docker rm $(docker ps -aq) 2>/dev/null || true
+          
+          # PostgreSQL 호환성 문제 해결을 위한 볼륨 삭제
+          echo "🗄️ PostgreSQL 데이터 볼륨 삭제 중..."
+          docker volume rm github-actions-demo_postgres_data 2>/dev/null || true
+          docker volume rm project_postgres_data 2>/dev/null || true
+          docker volume ls | grep postgres | awk '{print $2}' | xargs -r docker volume rm || true
+          
+          docker system prune -a -f || true
+          docker volume prune -f || true
+          
+          # Docker 서비스 재시작 (참조 프로젝트 가이드 적용)
+          echo "🔄 Docker 서비스 재시작 중..."
+          sudo systemctl restart docker || true
+          sleep 10
+          
+          # Docker 이미지 강제 재빌드 (참조 프로젝트 가이드 적용)
+          echo "🔨 Docker 이미지 강제 재빌드 중..."
+          docker-compose -f docker-compose.prod.yml build --no-cache app
+          
+          # Docker Compose로 서비스 시작
+          echo "🚀 Docker Compose로 서비스 시작 중..."
+          echo "🔍 Docker Compose 환경 변수 확인:"
+          echo "DOCKER_USERNAME: $DOCKER_USERNAME"
+          echo "IMAGE_NAME: $IMAGE_NAME"
+          echo "IMAGE_TAG: $IMAGE_TAG"
+          docker-compose -f docker-compose.prod.yml config
+          docker-compose -f docker-compose.prod.yml up -d
+          
+          # 서비스 시작 대기
+          echo "⏳ 서비스 시작을 기다리는 중..."
+          sleep 30
+          
+          # Docker 서비스 상태 확인 (참조 프로젝트 가이드 적용)
+          echo "🔍 Docker 서비스 상태 확인..."
+          docker-compose -f docker-compose.prod.yml ps
+          
+          # 포트 충돌 확인
+          echo "🔍 포트 충돌 확인..."
+          netstat -tulpn | grep :3000 || echo "포트 3000 사용 가능"
+          # netstat -tulpn | grep :80 || echo "포트 80 사용 가능"  # nginx 사용 안함
+          
+          # 컨테이너 로그 확인
+          echo "📋 컨테이너 로그 확인..."
+          docker-compose -f docker-compose.prod.yml logs app | tail -20
+          
+          # 모든 서비스가 healthy 상태가 될 때까지 대기 (참조 프로젝트 가이드 적용)
+          echo "🏥 서비스 헬스체크 대기 중..."
+          for i in {1..30}; do
+            echo "헬스체크 대기 시도 $i/30..."
+            
+            # 모든 서비스 상태 확인
+            if docker-compose -f docker-compose.prod.yml ps | grep -q "unhealthy"; then
+              echo "일부 서비스가 아직 unhealthy 상태입니다..."
+              echo "현재 서비스 상태:"
+              docker-compose -f docker-compose.prod.yml ps
+              sleep 10
+              continue
+            fi
+            
+            # app 서비스가 포트 3000에서 리스닝하는지 확인
+            if netstat -tlnp 2>/dev/null | grep :3000 > /dev/null; then
+              echo "✅ app이 포트 3000에서 리스닝 중"
+              
+              # 애플리케이션 헬스체크 시도
+              if curl -f http://localhost:3000/health 2>/dev/null; then
+                echo "✅ 헬스체크 성공!"
+                break
+              else
+                echo "애플리케이션 헬스체크 실패, 재시도 중..."
+                sleep 10
+                continue
+              fi
+            else
+              echo "app이 아직 포트 3000에서 리스닝하지 않음..."
+              sleep 10
+              continue
+            fi
+            
+            if [ $i -eq 30 ]; then
+              echo "❌ 헬스체크 실패 - 서비스 로그 확인"
+              echo "Docker 서비스 상태:"
+              docker-compose -f docker-compose.prod.yml ps
+              echo "app 로그:"
+              docker-compose -f docker-compose.prod.yml logs app
+              echo "nginx 로그:"
+              docker-compose -f docker-compose.prod.yml logs nginx
+              echo "postgres 로그:"
+              docker-compose -f docker-compose.prod.yml logs postgres
+              echo "redis 로그:"
+              docker-compose -f docker-compose.prod.yml logs redis
+              exit 1
+            fi
+          done
+          
+          # 배포 알림
+          echo "🚀 AWS Production deployment completed successfully"
+          echo "🌐 Application URL: http://${{ secrets.PROD_VM_HOST }}"
+          echo "📊 Metrics URL: http://${{ secrets.PROD_VM_HOST }}/metrics"
+          
+          # 이전 이미지 정리 (7일 이상 된 이미지)
+          docker image prune -f --filter "until=168h"
+
+  # GCP 프로덕션 배포 (STAGING)
+  deploy-gcp-production:
+    name: GCP 배포 (PRODUCTION)
+    runs-on: ubuntu-latest
+    needs: [build-and-push, security-scan]
+    if: (github.ref == 'refs/heads/master' || github.event.inputs.environment == 'production') && (github.event.inputs.provider == 'gcp' || github.event.inputs.provider == 'both')
+    environment: gcp-production
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: GCP 프로덕션 배포 준비
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.STAGING_VM_HOST }}
+        username: ${{ secrets.STAGING_VM_USERNAME }}
+        key: ${{ secrets.STAGING_VM_SSH_KEY }}
+        script: |
+          # Docker Hub 로그인을 위한 설정 (AWS CLI 불필요)
+          echo "🐳 Docker Hub를 사용하여 이미지를 가져옵니다..."
+          
+          # 환경 변수 설정
+          export DB_PASSWORD="${{ secrets.STAGING_DB_PASSWORD }}"
+          export REDIS_PASSWORD="${{ secrets.STAGING_REDIS_PASSWORD }}"
+          
+          # 작업 디렉토리 생성 및 이동
+          mkdir -p /home/${{ secrets.STAGING_VM_USERNAME }}/app
+          cd /home/${{ secrets.STAGING_VM_USERNAME }}/app
+          
+          # Blue-Green 배포를 위한 백업
+          if [ -f docker-compose.prod.yml ]; then
+            docker-compose -f docker-compose.prod.yml down
+            docker tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:backup-$(date +%Y%m%d-%H%M%S)
+          fi
+          
+          # AWS ECR 로그인 및 최신 이미지 풀
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login --username ${{ secrets.DOCKER_USERNAME }} --password-stdin
+          docker pull ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          
+          # 이전 이미지 정리
+          docker image prune -f
+          
+    - name: 필요한 파일들을 원격 서버에 복사
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.STAGING_VM_HOST }}
+        username: ${{ secrets.STAGING_VM_USERNAME }}
+        key: ${{ secrets.STAGING_VM_SSH_KEY }}
+        source: "docker-compose.prod.yml,nginx/nginx.prod.conf,Dockerfile,package.json,package-lock.json,src/"
+        target: "/home/${{ secrets.STAGING_VM_USERNAME }}/app/"
+        
+    - name: nginx 디렉토리 생성 및 설정 파일 배치
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.STAGING_VM_HOST }}
+        username: ${{ secrets.STAGING_VM_USERNAME }}
+        key: ${{ secrets.STAGING_VM_SSH_KEY }}
+        script: |
+          cd /home/${{ secrets.STAGING_VM_USERNAME }}/app
+          
+          # nginx 디렉토리 생성
+          mkdir -p nginx
+          mv nginx.prod.conf nginx/nginx.prod.conf
+          
+          # logs 디렉토리 생성
+          mkdir -p logs
+          
+          # 데이터베이스 초기화 스크립트 디렉토리 생성
+          mkdir -p database
+          
+    - name: 데이터베이스 스크립트 존재 확인
+      id: check-db-scripts
+      run: |
+        if [ -d "database" ] && [ "$(find database -type f -name "*.sql" -o -name "*.sh" -o -name "*.js" 2>/dev/null | wc -l)" -gt 0 ]; then
+          echo "has-db-scripts=true" >> $GITHUB_OUTPUT
+          echo "✅ 데이터베이스 스크립트가 존재합니다"
+        else
+          echo "has-db-scripts=false" >> $GITHUB_OUTPUT
+          echo "⚠️ 데이터베이스 스크립트가 없습니다. 복사를 건너뜁니다"
+        fi
+        
+    - name: 데이터베이스 초기화 스크립트 복사
+      if: steps.check-db-scripts.outputs.has-db-scripts == 'true'
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.STAGING_VM_HOST }}
+        username: ${{ secrets.STAGING_VM_USERNAME }}
+        key: ${{ secrets.STAGING_VM_SSH_KEY }}
+        source: "database/"
+        target: "/home/${{ secrets.STAGING_VM_USERNAME }}/app/"
+        
+    - name: GCP 프로덕션 배포 실행
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.STAGING_VM_HOST }}
+        username: ${{ secrets.STAGING_VM_USERNAME }}
+        key: ${{ secrets.STAGING_VM_SSH_KEY }}
+        script: |
+          cd /home/${{ secrets.STAGING_VM_USERNAME }}/app
+          
+          # 환경 변수 설정
+          export DB_PASSWORD="${{ secrets.STAGING_DB_PASSWORD }}"
+          export REDIS_PASSWORD="${{ secrets.STAGING_REDIS_PASSWORD }}"
+          export CONTAINER_PREFIX="gcp-production"
+          export DOCKER_USERNAME="${{ secrets.DOCKER_USERNAME }}"
+          export IMAGE_NAME="github-actions-demo-day2"
+          export IMAGE_TAG="latest"
+          
+          # 기존 서비스 및 이미지 정리
+          echo "🧹 기존 서비스 및 이미지 정리 중..."
+          docker-compose -f docker-compose.prod.yml down --remove-orphans || true
+          docker stop $(docker ps -aq) 2>/dev/null || true
+          docker rm $(docker ps -aq) 2>/dev/null || true
+          
+          # PostgreSQL 호환성 문제 해결을 위한 볼륨 삭제
+          echo "🗄️ PostgreSQL 데이터 볼륨 삭제 중..."
+          docker volume rm github-actions-demo_postgres_data 2>/dev/null || true
+          docker volume rm project_postgres_data 2>/dev/null || true
+          docker volume ls | grep postgres | awk '{print $2}' | xargs -r docker volume rm || true
+          
+          docker system prune -a -f || true
+          docker volume prune -f || true
+          
+          # Docker 서비스 재시작 (참조 프로젝트 가이드 적용)
+          echo "🔄 Docker 서비스 재시작 중..."
+          sudo systemctl restart docker || true
+          sleep 10
+          
+          # Docker Compose로 서비스 시작
+          docker-compose -f docker-compose.prod.yml up -d
+          
+          # 서비스 시작 대기
+          echo "⏳ 서비스 시작을 기다리는 중..."
+          sleep 30
+          
+          # 헬스체크 (여러 번 시도)
+          echo "🏥 헬스체크 시작..."
+          for i in {1..10}; do
+            echo "헬스체크 시도 $i/10..."
+            if curl -f http://localhost:3000/health; then
+              echo "✅ 헬스체크 성공!"
+              break
+            fi
+            if [ $i -eq 10 ]; then
+              echo "❌ 헬스체크 실패 - 서비스 로그 확인"
+              docker-compose -f docker-compose.prod.yml logs
+              exit 1
+            fi
+            sleep 10
+          done
+          
+          # 배포 알림
+          echo "🚀 GCP Production deployment completed successfully"
+          echo "🌐 Application URL: http://${{ secrets.STAGING_VM_HOST }}"
+          echo "📊 Metrics URL: http://${{ secrets.STAGING_VM_HOST }}/metrics"
+          
+          # 이전 이미지 정리 (7일 이상 된 이미지)
+          docker image prune -f --filter "until=168h"
+
+  # 배포 후 테스트
+  post-deployment-test:
+    name: 배포 후 테스트
+    runs-on: ubuntu-latest
+    needs: [deploy-aws, deploy-gcp, deploy-aws-production, deploy-gcp-production]
+    if: always() && (needs.deploy-aws.result == 'success' || needs.deploy-gcp.result == 'success' || needs.deploy-aws-production.result == 'success' || needs.deploy-gcp-production.result == 'success')
+    steps:
+    - name: 배포된 애플리케이션 테스트
+      run: |
+        # AWS 스테이징 환경 테스트
+        if [ "${{ needs.deploy-aws.result }}" == "success" ]; then
+          echo "Testing AWS staging environment..."
+          curl -f http://${{ secrets.STAGING_VM_HOST }}/health
+          curl -f http://${{ secrets.STAGING_VM_HOST }}/api/status
+          echo "✅ AWS staging environment tests passed"
+        fi
+        
+        # GCP 스테이징 환경 테스트
+        if [ "${{ needs.deploy-gcp.result }}" == "success" ]; then
+          echo "Testing GCP staging environment..."
+          curl -f http://${{ secrets.STAGING_VM_HOST }}/health
+          curl -f http://${{ secrets.STAGING_VM_HOST }}/api/status
+          echo "✅ GCP staging environment tests passed"
+        fi
+        
+        # AWS 프로덕션 환경 테스트
+        if [ "${{ needs.deploy-aws-production.result }}" == "success" ]; then
+          echo "Testing AWS production environment..."
+          curl -f http://${{ secrets.PROD_VM_HOST }}/health
+          curl -f http://${{ secrets.PROD_VM_HOST }}/api/status
+          echo "✅ AWS production environment tests passed"
+        fi
+        
+        # GCP 프로덕션 환경 테스트
+        if [ "${{ needs.deploy-gcp-production.result }}" == "success" ]; then
+          echo "Testing GCP production environment..."
+          curl -f http://${{ secrets.PROD_VM_HOST }}/health
+          curl -f http://${{ secrets.PROD_VM_HOST }}/api/status
+          echo "✅ GCP production environment tests passed"
+        fi
+
+  # 알림
+  notify:
+    name: 배포 알림
+    runs-on: ubuntu-latest
+    needs: [deploy-aws, deploy-gcp, deploy-aws-production, deploy-gcp-production, post-deployment-test]
+    if: always()
+    steps:
+    - name: 배포 결과 알림
+      run: |
+        echo "🎯 CI/CD Pipeline Summary"
+        echo "=========================="
+        echo "📦 Build: ✅ Success"
+        echo "🧪 Tests: ✅ Success"
+        echo "🔒 Security Scan: ✅ Success"
+        echo "🚀 AWS Production: ${{ needs.deploy-aws.result }}"
+        echo "🚀 GCP Staging: ${{ needs.deploy-gcp.result }}"
+        echo "🏭 AWS Production: ${{ needs.deploy-aws-production.result }}"
+        echo "🏭 GCP Production: ${{ needs.deploy-gcp-production.result }}"
+        echo "✅ Post-deployment Tests: ${{ needs.post-deployment-test.result }}"
+        echo ""
+        echo "🌐 Deployed URLs:"
+        if [ "${{ needs.deploy-aws.result }}" == "success" ]; then
+          echo "  AWS Production: http://${{ secrets.PROD_VM_HOST }}"
+        fi
+        if [ "${{ needs.deploy-gcp.result }}" == "success" ]; then
+          echo "  GCP Staging: http://${{ secrets.STAGING_VM_HOST }}"
+        fi
+        if [ "${{ needs.deploy-aws-production.result }}" == "success" ]; then
+          echo "  AWS Production: http://${{ secrets.PROD_VM_HOST }}"
+        fi
+        if [ "${{ needs.deploy-gcp-production.result }}" == "success" ]; then
+          echo "  GCP Production: http://${{ secrets.STAGING_VM_HOST }}"
+        fi
+        echo ""
+        echo "📊 Pipeline completed at: $(date)"

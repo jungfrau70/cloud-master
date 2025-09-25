@@ -1,0 +1,9 @@
+NAME                          DIRECTION  PRIORITY  SOURCE_RANGES     ALLOW
+cloud-deployment-allow-app    INGRESS    1000      ['0.0.0.0/0']     tcp:3000,tcp:7000
+cloud-deployment-allow-http   INGRESS    1000      ['0.0.0.0/0']     tcp:80
+cloud-deployment-allow-https  INGRESS    1000      ['0.0.0.0/0']     tcp:443
+cloud-deployment-allow-ssh    INGRESS    1000      ['0.0.0.0/0']     tcp:22
+default-allow-icmp            INGRESS    65534     ['0.0.0.0/0']     icmp
+default-allow-internal        INGRESS    65534     ['10.128.0.0/9']  tcp:0-65535,udp:0-65535,icmp
+default-allow-rdp             INGRESS    65534     ['0.0.0.0/0']     tcp:3389
+default-allow-ssh             INGRESS    65534     ['0.0.0.0/0']     tcp:22

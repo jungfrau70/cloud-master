@@ -1,0 +1,80 @@
+# 🚀 VM 배포 워크플로우
+# main 브랜치에 푸시될 때마다 자동으로 VM에 배포합니다
+
+name: Deploy to VM
+
+# 언제 실행할지 정의
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch: # 수동 실행 가능
+    inputs:
+      environment:
+        description: '배포 환경을 선택하세요'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+# 환경 변수
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: github-actions-demo
+
+jobs:
+  # VM 배포
+  deploy:
+    name: VM 배포
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: Docker Hub에서 이미지 풀
+      run: |
+        echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+        docker pull ${{ env.REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+        
+    - name: VM에 SSH 연결 및 배포
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          # 기존 컨테이너 중지 및 제거
+          docker stop github-actions-demo || true
+          docker rm github-actions-demo || true
+          
+          # Docker Hub에서 최신 이미지 풀
+          echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+          docker pull ${{ env.REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          
+          # 새 컨테이너 실행
+          docker run -d \
+            --name github-actions-demo \
+            --restart unless-stopped \
+            -p 3000:3000 \
+            -e NODE_ENV=production \
+            ${{ env.REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          
+          # 헬스 체크
+          sleep 10
+          curl -f http://localhost:3000/health || exit 1
+          
+          echo "✅ 배포가 성공적으로 완료되었습니다!"
+          
+    - name: 배포 상태 확인
+      run: |
+        echo "🔍 배포 상태를 확인합니다..."
+        # 실제 환경에서는 모니터링 도구를 사용하여 상태 확인
+        
+    - name: 배포 완료 알림
+      if: success()
+      run: |
+        echo "✅ VM 배포가 성공적으로 완료되었습니다!"
+        echo "🌐 애플리케이션 URL: http://${{ secrets.VM_HOST }}:3000"

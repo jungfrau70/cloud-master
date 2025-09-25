@@ -1,0 +1,110 @@
+name: Day1 - Basic CI/CD Pipeline
+
+on:
+  push:
+    branches: [ day1-basics ]
+  pull_request:
+    branches: [ day1-basics ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run tests
+      run: npm test
+      
+    - name: Run linting
+      run: npm run lint
+      
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: |
+          ${{ secrets.DOCKER_USERNAME }}/github-actions-demo:day1-${{ github.sha }}
+          ${{ secrets.DOCKER_USERNAME }}/github-actions-demo:day1-latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
+  deploy-aws:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/day1-basics'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+        
+    - name: Deploy to AWS EC2
+      run: |
+        echo "Deploying to AWS EC2..."
+        # EC2 인스턴스에 SSH로 접속하여 Docker 컨테이너 실행
+        ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+          "docker pull ${{ secrets.DOCKER_USERNAME }}/github-actions-demo:day1-latest && \
+           docker stop github-actions-demo || true && \
+           docker rm github-actions-demo || true && \
+           docker run -d --name github-actions-demo -p 3000:3000 ${{ secrets.DOCKER_USERNAME }}/github-actions-demo:day1-latest"
+           
+  deploy-gcp:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/day1-basics'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup GCP credentials
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+        
+    - name: Deploy to GCP Compute Engine
+      run: |
+        echo "Deploying to GCP Compute Engine..."
+        # GCP Compute Engine 인스턴스에 SSH로 접속하여 Docker 컨테이너 실행
+        gcloud compute ssh ${{ secrets.GCP_INSTANCE_NAME }} --zone=${{ secrets.GCP_ZONE }} --command="
+          docker pull ${{ secrets.DOCKER_USERNAME }}/github-actions-demo:day1-latest && \
+          docker stop github-actions-demo || true && \
+          docker rm github-actions-demo || true && \
+          docker run -d --name github-actions-demo -p 3000:3000 ${{ secrets.DOCKER_USERNAME }}/github-actions-demo:day1-latest
+        "

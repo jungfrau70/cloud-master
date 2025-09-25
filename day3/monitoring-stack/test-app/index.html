@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cloud Master Day3 - Monitoring Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .metric { margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+        .value { font-size: 24px; font-weight: bold; color: #2c3e50; }
+        .label { color: #7f8c8d; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Cloud Master Day3 - Monitoring Test Application</h1>
+        
+        <div class="metric">
+            <div class="label">Request Count</div>
+            <div class="value" id="request-count">0</div>
+        </div>
+        
+        <div class="metric">
+            <div class="label">Response Time (ms)</div>
+            <div class="value" id="response-time">0</div>
+        </div>
+        
+        <button onclick="generateLoad()">Generate Load</button>
+        <button onclick="clearLoad()">Clear Load</button>
+        
+        <script>
+            let requestCount = 0;
+            let loadInterval = null;
+            
+            function updateMetrics() {
+                document.getElementById('request-count').textContent = requestCount;
+                document.getElementById('response-time').textContent = Math.random() * 100;
+            }
+            
+            function generateLoad() {
+                if (loadInterval) return;
+                
+                loadInterval = setInterval(() => {
+                    fetch('/api/metrics')
+                        .then(response => response.json())
+                        .then(data => {
+                            requestCount++;
+                            updateMetrics();
+                        })
+                        .catch(error => console.error('Error:', error));
+                }, 100);
+            }
+            
+            function clearLoad() {
+                if (loadInterval) {
+                    clearInterval(loadInterval);
+                    loadInterval = null;
+                }
+            }
+            
+            updateMetrics();
+        </script>
+    </div>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "total_duration_days": 7,
+  "cloud_providers": ["aws", "gcp"],
+  "required_tools": [
+    "aws-cli",
+    "gcloud-cli", 
+    "docker",
+    "git",
+    "github-cli",
+    "kubectl",
+    "helm",
+    "terraform"
+  ],
+  "environment_setup": {
+    "aws_region": "us-west-2",
+    "gcp_region": "us-central1",
+    "project_prefix": "cloud-training",
+    "shared_resources": true,
+    "enable_monitoring": true,
+    "enable_logging": true
+  }
+}

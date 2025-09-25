@@ -1,0 +1,2 @@
+NAME                     ZONE               MACHINE_TYPE  STATUS   CREATION_TIMESTAMP
+cloud-deployment-server  asia-northeast3-a  e2-medium     RUNNING  2025-09-20T21:45:09.703-07:00
