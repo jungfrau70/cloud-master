@@ -95,7 +95,7 @@ chmod +x ../../../repos/cloud-scripts/gcp-project-cleanup.sh
 ```
 
 ## 📚 참고 자료
-- ["Cloud Master Day1 가이드"][cloud_master/textbook/Day1/README.md]
-- ["Docker 기초 실습"][cloud_master/textbook/Day1/practices/docker-basics.md]
-- ["VM 배포 실습"][cloud_master/textbook/Day1/practices/vm-deployment.md]
-- ["cloud-scripts 가이드"][cloud_master/repos/cloud-scripts/README.md]
+- ["Cloud Master Day1 가이드"](cloud_master/textbook/Day1/README.md)
+- ["Docker 기초 실습"](cloud_master/textbook/Day1/practices/docker-basics.md)
+- ["VM 배포 실습"](cloud_master/textbook/Day1/practices/vm-deployment.md)
+- ["cloud-scripts 가이드"](cloud_master/repos/cloud-scripts/README.md)

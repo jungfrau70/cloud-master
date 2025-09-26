@@ -56,9 +56,9 @@ docker-compose up -d
 
 ## 📚 상세 가이드
 
-- ["WSL 설정 가이드"][guides/wsl-setup-guide.md]
-- ["Docker 기초 가이드"][guides/docker-basic-guide.md]
-- ["AWS/GCP 권한 설정"][guides/aws-gcp-permissions-setup.md]
+- ["WSL 설정 가이드"](guides/wsl-setup-guide.md)
+- ["Docker 기초 가이드"](guides/docker-basic-guide.md)
+- ["AWS/GCP 권한 설정"](guides/aws-gcp-permissions-setup.md)
 
 ## 🔧 자동화 스크립트
 
@@ -88,7 +88,7 @@ docker-compose up -d
 
 ## 🔗 관련 링크
 
-- ["Cloud Master 전체 과정"][../README.md]
+- ["Cloud Master 전체 과정"](../README.md)
 - ["Day2: 다중 서비스 환경"][../day2/]
 - ["Day3: 고가용성 및 확장성"][../day3/]
 - ["강의안 문서"]["../../Day1_강의안.md"]

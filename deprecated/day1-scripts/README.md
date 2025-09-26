@@ -270,7 +270,7 @@ wsl --install -d Ubuntu-22.04
 ```
 
 ##### WSL 수동 설정
-상세한 WSL 환경 구축 방법은 ["WSL 추가 생성 가이드"][wsl-setup-guide.md]를 참조하세요.
+상세한 WSL 환경 구축 방법은 ["WSL 추가 생성 가이드"](wsl-setup-guide.md)를 참조하세요.
 
 #### WSL 환경에서 실행
 ```bash
@@ -1201,27 +1201,27 @@ aws ce get-cost-and-usage --time-period Start=2024-01-01,End=2024-01-31
 - ["Docker Desktop WSL2 가이드"][https://docs.docker.com/desktop/wsl/]
 
 ### Cloud Master 과정
-- ["Day1: Docker & VM 배포"][cloud_master/textbook/Day1/README.md]
-- ["Day2: Kubernetes & 고급 CI/CD"][cloud_master/textbook/Day2/README.md]
-- ["Day3: 모니터링 & 비용 최적화"][cloud_master/textbook/Day3/README.md]
+- ["Day1: Docker & VM 배포"](cloud_master/textbook/Day1/README.md)
+- ["Day2: Kubernetes & 고급 CI/CD"](cloud_master/textbook/Day2/README.md)
+- ["Day3: 모니터링 & 비용 최적화"](cloud_master/textbook/Day3/README.md)
 
 ### 실습 샘플
-- ["Day1 실습 샘플"][cloud_master/repos/samples/day1/my-app/README.md]
-- ["Day2 실습 샘플"][cloud_master/repos/samples/day2/my-app/README.md]
-- ["Day3 실습 샘플"][cloud_master/repos/samples/day3/my-app/README.md]
+- ["Day1 실습 샘플"](cloud_master/repos/samples/day1/my-app/README.md)
+- ["Day2 실습 샘플"](cloud_master/repos/samples/day2/my-app/README.md)
+- ["Day3 실습 샘플"](cloud_master/repos/samples/day3/my-app/README.md)
 
 ### 설치 가이드
-- ["WSL 환경 설치 가이드"][cloud_master/repos/install/README-wsl.md]
-- ["WSL 추가 생성 가이드"][wsl-setup-guide.md] - 상세한 WSL 환경 구축 가이드
+- ["WSL 환경 설치 가이드"](cloud_master/repos/install/README-wsl.md)
+- ["WSL 추가 생성 가이드"](wsl-setup-guide.md) - 상세한 WSL 환경 구축 가이드
 - ["WSL 자동 설정 스크립트"][wsl-auto-setup.sh] - 원클릭 WSL 환경 구축
 - ["WSL 관리 도구"][wsl-manager.sh] - WSL 배포판 생성/삭제/관리
-- ["WSL 관리 도구 가이드"][wsl-manager-guide.md] - 상세한 사용법 및 예제
-- ["WSL 관리 도구 API 문서"][wsl-manager-api.md] - 기술 문서 및 함수 참조
-- ["WSL 관리 도구 사용 예제"][wsl-manager-examples.md] - 실제 사용 시나리오
+- ["WSL 관리 도구 가이드"](wsl-manager-guide.md) - 상세한 사용법 및 예제
+- ["WSL 관리 도구 API 문서"](wsl-manager-api.md) - 기술 문서 및 함수 참조
+- ["WSL 관리 도구 사용 예제"](wsl-manager-examples.md) - 실제 사용 시나리오
 - ["전체 설치 스크립트"][cloud_master/repos/install/install-all-wsl.sh]
 
 ### kubectl Context 관리
-- ["kubectl Context 설정 가이드"][kubectl-context-guide.md]
+- ["kubectl Context 설정 가이드"](kubectl-context-guide.md)
 - ["Context 전환 스크립트 [Linux/macOS]"][context-switch.sh]
 - ["Context 전환 스크립트 [Windows]"][context-switch.bat]
 
@@ -1235,7 +1235,7 @@ aws ce get-cost-and-usage --time-period Start=2024-01-01,End=2024-01-31
 
 ### CI/CD 가이드
 - ["GitHub Actions 워크플로우"][.github/workflows/cloud-master-ci-cd.yml]
-- ["GitHub Actions 설정 가이드"][.github/workflows/README.md]
+- ["GitHub Actions 설정 가이드"](.github/workflows/README.md)
 - ["Docker 이미지 빌드 가이드"][cloud_master/repos/samples/day1/my-app/Dockerfile]
 
 ## 🤝 기여하기

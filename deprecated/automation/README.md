@@ -346,10 +346,10 @@ gcloud container clusters list
 ## 📚 추가 자료
 
 ### 관련 문서
-- ["GitHub Actions CI/CD 완전 가이드"][../../textbook/Day1/practices/github-actions-cicd-guide.md]
-- ["Cloud Master Day 1 가이드"][../../textbook/Day1/README.md]
-- ["Cloud Master Day 2 가이드"][../../textbook/Day2/README.md]
-- ["Cloud Master Day 3 가이드"][../../textbook/Day3/README.md]
+- ["GitHub Actions CI/CD 완전 가이드"](../../textbook/Day1/practices/github-actions-cicd-guide.md)
+- ["Cloud Master Day 1 가이드"](../../textbook/Day1/README.md)
+- ["Cloud Master Day 2 가이드"](../../textbook/Day2/README.md)
+- ["Cloud Master Day 3 가이드"](../../textbook/Day3/README.md)
 
 ### 공식 문서
 - ["GitHub Actions 공식 문서"][https://docs.github.com/ko/actions]
@@ -394,9 +394,9 @@ gcloud container clusters list
 
 <div align="center">
 
-["← 이전: Cloud Master 메인"][../../README.md] | 
-["📚 전체 커리큘럼"][../../../curriculum.md] | 
-["🏠 학습 경로로 돌아가기"][../../../index.md] | 
-["다음: Cloud Scripts →"][../cloud-scripts/README.md]
+["← 이전: Cloud Master 메인"](../../README.md) | 
+["📚 전체 커리큘럼"](../../../curriculum.md) | 
+["🏠 학습 경로로 돌아가기"](../../../index.md) | 
+["다음: Cloud Scripts →"](../cloud-scripts/README.md)
 
 </div>

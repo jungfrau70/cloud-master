@@ -230,6 +230,6 @@ docker logs [container_name]
 
 ## 📚 추가 자료
 
-- ["포트 충돌 해결 가이드"][port-conflict-resolution.md]
-- ["문제 해결 가이드"][troubleshooting.md]
-- ["Cloud Master 전체 과정"][../../README.md]
+- ["포트 충돌 해결 가이드"](port-conflict-resolution.md)
+- ["문제 해결 가이드"](troubleshooting.md)
+- ["Cloud Master 전체 과정"](../../README.md)

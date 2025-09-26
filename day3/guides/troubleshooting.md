@@ -307,8 +307,8 @@ docker logs [container_name] > container-logs.txt
 
 ## 📚 추가 자료
 
-- ["WSL → Cloud VM 설정 가이드"][wsl-to-vm-setup.md]
-- ["포트 충돌 해결 가이드"][port-conflict-resolution.md]
+- ["WSL → Cloud VM 설정 가이드"](wsl-to-vm-setup.md)
+- ["포트 충돌 해결 가이드"](port-conflict-resolution.md)
 - ["Docker 공식 문서"][https://docs.docker.com/]
 - ["AWS CLI 사용 가이드"][https://docs.aws.amazon.com/cli/]
 - ["GCP CLI 사용 가이드"][https://cloud.google.com/sdk/docs]

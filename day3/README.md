@@ -66,9 +66,9 @@ chmod +x vm-setup.sh
 
 ## 📚 상세 가이드
 
-- ["WSL → Cloud VM 설정 가이드"][guides/wsl-to-vm-setup.md]
-- ["포트 충돌 해결 가이드"][guides/port-conflict-resolution.md]
-- ["문제 해결 가이드"][guides/troubleshooting.md]
+- ["WSL → Cloud VM 설정 가이드"](guides/wsl-to-vm-setup.md)
+- ["포트 충돌 해결 가이드"](guides/port-conflict-resolution.md)
+- ["문제 해결 가이드"](guides/troubleshooting.md)
 
 ## 🔧 자동화 스크립트
 
@@ -101,7 +101,7 @@ chmod +x vm-setup.sh
 
 ## 🔗 관련 링크
 
-- ["Cloud Master 전체 과정"][../README.md]
+- ["Cloud Master 전체 과정"](../README.md)
 - ["Day1: 기본 배포"][../automation/day1/]
 - ["Day2: 다중 서비스 환경"][../automation/day2/]
 - ["강의안 문서"]["../../Day3_강의안.md"]

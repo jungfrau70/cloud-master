@@ -196,6 +196,6 @@ docker-compose up -d
 
 ## 📚 관련 자료
 
-- ["WSL → Cloud VM 설정 가이드"][wsl-to-vm-setup.md]
-- ["문제 해결 가이드"][troubleshooting.md]
+- ["WSL → Cloud VM 설정 가이드"](wsl-to-vm-setup.md)
+- ["문제 해결 가이드"](troubleshooting.md)
 - ["Docker 네트워킹 가이드"][https://docs.docker.com/network/]

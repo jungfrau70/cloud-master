@@ -352,8 +352,8 @@ WSL 설치 및 기본 설정이 완료되면 다음 단계를 진행하세요:
 
 ## 🔗 관련 문서
 
-- ["WSL 고급 설정 가이드"][wsl-setup-guide.md]
-- ["Cloud Master 실습 가이드"][cloud_master/execuise-guide.md]
+- ["WSL 고급 설정 가이드"](wsl-setup-guide.md)
+- ["Cloud Master 실습 가이드"](cloud_master/execuise-guide.md)
 - ["AWS 계정 가입 가이드"]["cloud_master/accounts/AWS계정가입.md"]
 - ["GCP 계정 가입 가이드"]["cloud_master/accounts/GCP_개인계정가입.md"]
 
